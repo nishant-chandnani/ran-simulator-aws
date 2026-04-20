@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cu-service
+  labels:
+    app: cu
+spec:
+  selector:
+    app: cu
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001

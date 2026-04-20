@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: du-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: du
+  template:
+    metadata:
+      labels:
+        app: du
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: du
+          image: {{ .Values.du.image }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: CU_URL
+              value: "http://cu-service:8001"

@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cu-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cu
+  template:
+    metadata:
+      labels:
+        app: cu
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: cu
+          image: {{ .Values.cu.image }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
