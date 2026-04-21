@@ -1,5 +1,7 @@
 cu:
-  image: 276594885557.dkr.ecr.ap-southeast-2.amazonaws.com/ran-simulator-cu:v3
+  repository: 276594885557.dkr.ecr.ap-southeast-2.amazonaws.com/ran-simulator-cu
+  tag: latest
 
 du:
-  image: 276594885557.dkr.ecr.ap-southeast-2.amazonaws.com/ran-simulator-du:v3
+  repository: 276594885557.dkr.ecr.ap-southeast-2.amazonaws.com/ran-simulator-du
+  tag: latest

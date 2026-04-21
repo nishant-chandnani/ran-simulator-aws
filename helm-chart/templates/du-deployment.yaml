@@ -16,7 +16,7 @@ spec:
         - name: ecr-secret
       containers:
         - name: du
-          image: {{ .Values.du.image }}
+          image: "{{ .Values.du.repository }}:{{ .Values.du.tag }}"
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
