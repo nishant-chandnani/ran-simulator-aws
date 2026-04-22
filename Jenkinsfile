@@ -42,6 +42,19 @@ pipeline {
             }
         }
 
+        stage('Update ECR Secret') {
+            steps {
+                sh '''
+                kubectl delete secret ecr-secret --ignore-not-found
+
+                kubectl create secret docker-registry ecr-secret \
+                --docker-server=276594885557.dkr.ecr.ap-southeast-2.amazonaws.com \
+                --docker-username=AWS \
+                --docker-password=$(aws ecr get-login-password --region ap-southeast-2)
+                '''
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
