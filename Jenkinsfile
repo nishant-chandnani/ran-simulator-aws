@@ -45,6 +45,8 @@ pipeline {
         stage('Update ECR Secret') {
             steps {
                 sh '''
+                export KUBECONFIG=/var/lib/jenkins/.kube/config
+
                 kubectl delete secret ecr-secret --ignore-not-found
 
                 kubectl create secret docker-registry ecr-secret \
@@ -58,6 +60,8 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
+                export KUBECONFIG=/var/lib/jenkins/.kube/config
+                
                 cd helm-chart
                 helm upgrade --install ran-sim . \
                   --set cu.tag=${VERSION} \
