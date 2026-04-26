@@ -34,8 +34,8 @@ pipeline {
                         skipLocal = false
                     }
 
-                    // assign once to global variable
-                    SKIP = skipLocal
+                    // TEMP FIX: Always build to ensure latest CU/DU code is deployed
+                    SKIP = false
                 }
             }
         }
