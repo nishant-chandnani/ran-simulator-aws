@@ -81,3 +81,15 @@ def metrics_json():
         "failed_attach": failed_attach,
         "attach_sr_percent": round(sr, 2)
     }
+
+@app.post("/reset-metrics")
+def reset_metrics():
+    global total_requests, successful_attach, failed_attach
+
+    total_requests = 0
+    successful_attach = 0
+    failed_attach = 0
+
+    return {
+        "status": "CU metrics reset"
+    }

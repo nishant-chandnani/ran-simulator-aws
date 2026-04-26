@@ -1,3 +1,4 @@
+def SKIP = false
 pipeline {
     agent any
 
@@ -5,7 +6,6 @@ pipeline {
         AWS_REGION = "ap-southeast-2"
         ECR_REGISTRY = "276594885557.dkr.ecr.ap-southeast-2.amazonaws.com"
         VERSION = ""
-        SKIP_BUILD = "false"
     }
 
     stages {
@@ -130,7 +130,17 @@ pipeline {
             steps {
                 sh '''
                 echo "Resetting metrics before load test..."
+
+                # Reset DU metrics (NodePort)
                 curl -s -X POST http://localhost:30000/reset-metrics || true
+
+                # Reset CU metrics (via port-forward)
+                kubectl port-forward service/cu-service 8001:8001 > /dev/null 2>&1 &
+                PF_RESET_PID=$!
+                sleep 5
+                curl -s -X POST http://localhost:8001/reset-metrics || true
+                kill $PF_RESET_PID || true
+
                 sleep 2
 
                 echo "Starting load test (10 rounds x 30 requests)..."

@@ -102,3 +102,17 @@ def metrics_json():
         "failed_rach": failed_rach,
         "rach_sr_percent": round(sr, 2)
     }
+
+
+# Endpoint to reset DU metrics
+@app.post("/reset-metrics")
+def reset_metrics():
+    global total_rach_attempts, successful_rach, failed_rach
+
+    total_rach_attempts = 0
+    successful_rach = 0
+    failed_rach = 0
+
+    return {
+        "status": "DU metrics reset"
+    }
