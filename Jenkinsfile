@@ -110,7 +110,11 @@ pipeline {
                 sh '''
                 echo "Checking metrics..."
 
-                curl -s http://localhost:30000/metrics | grep -i ue || exit 1
+                curl -s http://localhost:30000/metrics | grep -i ue
+                if [ $? -ne 0 ]; then
+                  echo "Metrics validation failed"
+                  exit 1
+                fi
 
                 echo "Metrics validation passed"
                 '''
