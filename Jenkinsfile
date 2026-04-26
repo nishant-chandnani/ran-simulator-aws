@@ -80,11 +80,25 @@ pipeline {
             }
             steps {
                 sh '''
-                docker tag cu-service:${VERSION} $ECR_REGISTRY/ran-simulator-cu:${VERSION}
-                docker tag du-service:${VERSION} $ECR_REGISTRY/ran-simulator-du:${VERSION}
+                # Safety guard
+                if [ "$SKIP_BUILD" = "true" ]; then
+                  echo "Skipping tag & push as no CU/DU changes detected"
+                  exit 0
+                fi
 
-                docker push $ECR_REGISTRY/ran-simulator-cu:${VERSION}
-                docker push $ECR_REGISTRY/ran-simulator-du:${VERSION}
+                # Ensure VERSION is set
+                if [ -z "$VERSION" ]; then
+                  echo "VERSION not set in this stage, deriving again..."
+                  VERSION=$(git rev-parse --short HEAD)
+                fi
+
+                echo "Using VERSION for tagging: $VERSION"
+
+                docker tag cu-service:$VERSION $ECR_REGISTRY/ran-simulator-cu:$VERSION
+                docker tag du-service:$VERSION $ECR_REGISTRY/ran-simulator-du:$VERSION
+
+                docker push $ECR_REGISTRY/ran-simulator-cu:$VERSION
+                docker push $ECR_REGISTRY/ran-simulator-du:$VERSION
                 '''
             }
         }
@@ -229,4 +243,4 @@ pipeline {
             }
         }
     }
-} 
+}
