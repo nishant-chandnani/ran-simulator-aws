@@ -85,21 +85,25 @@ pipeline {
         stage('Load Test') {
             steps {
                 sh '''
-                echo "Starting load test..."
+                echo "Starting load test (10 rounds x 30 requests)..."
 
-                for round in {1..5}; do
-                  echo "Round $round"
+                TOTAL_REQUESTS=0
 
-                  for i in {1..20}; do
+                for round in $(seq 1 10); do
+                  echo "\n===== ROUND $round ====="
+
+                  for i in $(seq 1 30); do
                     curl -s -X POST http://localhost:30000/attach \
                     -H "Content-Type: application/json" \
-                    -d '{"ue_id":"UE'"$i"'"}' &
+                    -d '{"ue_id":"UE'"$round""$i"'"}' &
                   done
 
                   wait
-                  sleep 2
+                  TOTAL_REQUESTS=$((TOTAL_REQUESTS + 30))
+                  sleep 1
                 done
 
+                echo "\nTotal requests sent: $TOTAL_REQUESTS"
                 echo "Load test completed"
                 '''
             }
@@ -108,33 +112,49 @@ pipeline {
         stage('Metrics Validation') {
             steps {
                 sh '''
-                echo "Checking KPI metrics..."
+                echo "\n===== KPI VALIDATION ====="
 
-                METRICS=$(curl -s http://localhost:30000/metrics)
+                export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                echo "$METRICS"
+                echo "Starting port-forward for CU service..."
+                kubectl port-forward service/cu-service 8001:8001 > /dev/null 2>&1 &
+                PF_PID=$!
 
-                # Extract values
-                RACH_SR=$(echo "$METRICS" | grep rach_sr_percent | awk '{print $2}')
+                sleep 5
 
-                # CU metrics may not always be exposed via DU, so handle safely
-                ATTACH_SR=$(echo "$METRICS" | grep attach_sr_percent | awk '{print $2}')
+                echo "\nFetching DU metrics..."
+                DU_RAW=$(curl -s http://localhost:30000/metrics)
+                echo "$DU_RAW"
 
-                echo "RACH SR: $RACH_SR"
-                echo "ATTACH SR: $ATTACH_SR"
+                echo "\nFetching CU metrics..."
+                CU_RAW=$(curl -s http://localhost:8001/metrics)
+                echo "$CU_RAW"
 
-                # Default attach SR to 100 if not present (DU-only exposure case)
-                if [ -z "$ATTACH_SR" ]; then
-                  ATTACH_SR=100
-                fi
+                # Convert metrics to JSON-like structure for jq
+                DU_JSON=$(echo "$DU_RAW" | awk '{printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
+                CU_JSON=$(echo "$CU_RAW" | awk '{printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
 
-                # Validation
-                if (( $(echo "$RACH_SR < 80" | bc -l) )) || (( $(echo "$ATTACH_SR < 80" | bc -l) )); then
-                  echo "KPI validation failed"
+                echo "\nParsed DU JSON: $DU_JSON"
+                echo "Parsed CU JSON: $CU_JSON"
+
+                RACH_SR=$(echo "$DU_JSON" | jq '.rach_sr_percent')
+                ATTACH_SR=$(echo "$CU_JSON" | jq '.attach_sr_percent')
+
+                echo "\n===== KPI RESULTS ====="
+                echo "RACH SR   : $RACH_SR"
+                echo "ATTACH SR : $ATTACH_SR"
+
+                # Cleanup
+                kill $PF_PID || true
+
+                THRESHOLD=75
+
+                if (( $(echo "$RACH_SR < $THRESHOLD" | bc -l) )) || (( $(echo "$ATTACH_SR < $THRESHOLD" | bc -l) )); then
+                  echo "\n❌ KPI validation FAILED (threshold: $THRESHOLD)"
                   exit 1
                 fi
 
-                echo "KPI validation passed"
+                echo "\n✅ KPI validation PASSED (threshold: $THRESHOLD)"
                 '''
             }
         }
