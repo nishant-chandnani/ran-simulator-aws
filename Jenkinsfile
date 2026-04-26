@@ -25,16 +25,14 @@ pipeline {
                     }
                     echo "Detected changed files:\n${changes}"
 
-                    def skipLocal
                     if (!changes.contains("cu-service") && !changes.contains("du-service")) {
-                        echo "No changes in CU/DU. Skipping build and push."
-                        skipLocal = true
+                        echo "No CU/DU code changes detected."
+                        echo "However, pipeline is configured to always build & deploy for consistency."
                     } else {
                         echo "Changes detected in CU/DU. Proceeding with build."
-                        skipLocal = false
                     }
 
-                    // TEMP FIX: Always build to ensure latest CU/DU code is deployed
+                    // Always build & deploy to ensure cluster consistency
                     SKIP = false
                 }
             }
