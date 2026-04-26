@@ -153,9 +153,24 @@ pipeline {
                 RACH_CHECK=$(echo "$RACH_SR < $RACH_THRESHOLD" | bc -l 2>/dev/null)
                 ATTACH_CHECK=$(echo "$ATTACH_SR < $ATTACH_THRESHOLD" | bc -l 2>/dev/null)
 
+
                 # Fail safe if bc fails or empty
                 if [ -z "$RACH_CHECK" ]; then RACH_CHECK=1; fi
                 if [ -z "$ATTACH_CHECK" ]; then ATTACH_CHECK=1; fi
+
+                echo "\n===== KPI DECISION ====="
+
+                if (( RACH_CHECK )); then
+                  echo "❌ RACH SR BELOW threshold ($RACH_SR < $RACH_THRESHOLD)"
+                else
+                  echo "✅ RACH SR OK ($RACH_SR >= $RACH_THRESHOLD)"
+                fi
+
+                if (( ATTACH_CHECK )); then
+                  echo "❌ ATTACH SR BELOW threshold ($ATTACH_SR < $ATTACH_THRESHOLD)"
+                else
+                  echo "✅ ATTACH SR OK ($ATTACH_SR >= $ATTACH_THRESHOLD)"
+                fi
 
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
                   echo "\n❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD, ATTACH threshold: $ATTACH_THRESHOLD)"
