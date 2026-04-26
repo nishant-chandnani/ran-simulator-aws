@@ -69,5 +69,50 @@ pipeline {
                 '''
             }
         }
+
+        stage('Health Check') {
+            steps {
+                sh '''
+                echo "Checking service availability..."
+                sleep 10
+                curl -f http://localhost:30000/attach || exit 1
+                '''
+            }
+        }
+
+        stage('Load Test') {
+            steps {
+                sh '''
+                echo "Starting load test..."
+
+                for round in {1..5}; do
+                  echo "Round $round"
+
+                  for i in {1..20}; do
+                    curl -s -X POST http://localhost:30000/attach \
+                    -H "Content-Type: application/json" \
+                    -d "{\"ue_id\":\"UE$i\"}" &
+                  done
+
+                  wait
+                  sleep 2
+                done
+
+                echo "Load test completed"
+                '''
+            }
+        }
+
+        stage('Metrics Validation') {
+            steps {
+                sh '''
+                echo "Checking metrics..."
+
+                curl -s http://localhost:30000/metrics | grep -i ue || exit 1
+
+                echo "Metrics validation passed"
+                '''
+            }
+        }
     }
 }

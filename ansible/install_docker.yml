@@ -1,0 +1,117 @@
+- name: Install Docker on EC2
+  hosts: web
+  become: yes
+
+  tasks:
+    - name: Install Docker package
+      yum:
+        name: docker
+        state: present
+
+    - name: Start Docker service
+      service:
+        name: docker
+        state: started
+
+    - name: Enable Docker on boot
+      service:
+        name: docker
+        enabled: yes
+  
+    - name: Install Git
+      yum:
+        name: git
+        state: present
+    
+    - name: Install Java 21 (required for Jenkins)
+      yum:
+        name: java-21-amazon-corretto
+        state: present
+
+    - name: Add Jenkins repository
+      get_url:
+        url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+
+    - name: Import Jenkins GPG key
+      rpm_key:
+        state: present
+        key: https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+
+    - name: Install Jenkins
+      yum:
+        name: jenkins
+        state: present
+
+    - name: Add jenkins user to docker group
+      user:
+        name: jenkins
+        groups: docker
+        append: yes
+
+    - name: Set JAVA_HOME for Jenkins
+      lineinfile:
+        path: /etc/sysconfig/jenkins
+        line: 'JAVA_HOME=/usr/lib/jvm/java-21-amazon-corretto'
+        create: yes
+
+    - name: Ensure /tmp is mounted with larger size
+      mount:
+        name: /tmp
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=2G
+        state: mounted
+
+    - name: Ensure Jenkins is running after configuration
+      service:
+        name: jenkins
+        state: restarted
+
+    - name: Enable Jenkins on boot
+      service:
+        name: jenkins
+        enabled: yes
+
+
+    - name: Install kubectl
+      get_url:
+        url: https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    - name: Install Helm
+      shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Install k3s (lightweight Kubernetes)
+      shell: |
+        curl -sfL https://get.k3s.io | sh -
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for k3s node to be ready
+      shell: sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes
+      register: k3s_status
+      retries: 20
+      delay: 15
+      until: k3s_status.rc == 0
+
+    - name: Create .kube directory for Jenkins
+      file:
+        path: /var/lib/jenkins/.kube
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: '0755'
+
+    - name: Copy kubeconfig to Jenkins user
+      copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /var/lib/jenkins/.kube/config
+        remote_src: yes
+        owner: jenkins
+        group: jenkins
+        mode: '0600'
