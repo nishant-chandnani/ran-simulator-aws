@@ -46,13 +46,13 @@ pipeline {
             }
             steps {
                 sh """
-                echo "Using VERSION: \${env.VERSION}"
+                echo "Using VERSION: ${env.VERSION}"
 
                 cd cu-service
-                docker build -t cu-service:\${env.VERSION} .
+                docker build -t cu-service:${env.VERSION} .
 
                 cd ../du-service
-                docker build -t du-service:\${env.VERSION} .
+                docker build -t du-service:${env.VERSION} .
                 """
             }
         }
@@ -75,13 +75,13 @@ pipeline {
             }
             steps {
                 sh """
-                echo "Using VERSION for tagging: \${env.VERSION}"
+                echo "Using VERSION for tagging: ${env.VERSION}"
 
-                docker tag cu-service:\${env.VERSION} \${ECR_REGISTRY}/ran-simulator-cu:\${env.VERSION}
-                docker tag du-service:\${env.VERSION} \${ECR_REGISTRY}/ran-simulator-du:\${env.VERSION}
+                docker tag cu-service:${env.VERSION} ${ECR_REGISTRY}/ran-simulator-cu:${env.VERSION}
+                docker tag du-service:${env.VERSION} ${ECR_REGISTRY}/ran-simulator-du:${env.VERSION}
 
-                docker push \${ECR_REGISTRY}/ran-simulator-cu:\${env.VERSION}
-                docker push \${ECR_REGISTRY}/ran-simulator-du:\${env.VERSION}
+                docker push ${ECR_REGISTRY}/ran-simulator-cu:${env.VERSION}
+                docker push ${ECR_REGISTRY}/ran-simulator-du:${env.VERSION}
                 """
             }
         }
