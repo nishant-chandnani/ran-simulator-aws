@@ -138,6 +138,17 @@ pipeline {
                 RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent')
                 ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent')
 
+                # Handle missing/null values safely
+                if [ -z "$RACH_SR" ] || [ "$RACH_SR" = "null" ]; then
+                  echo "RACH SR missing or invalid"
+                  RACH_SR=0
+                fi
+
+                if [ -z "$ATTACH_SR" ] || [ "$ATTACH_SR" = "null" ]; then
+                  echo "ATTACH SR missing or invalid"
+                  ATTACH_SR=0
+                fi
+
                 echo "\n===== KPI RESULTS ====="
                 echo "RACH SR   : $RACH_SR"
                 echo "ATTACH SR : $ATTACH_SR"
@@ -147,7 +158,10 @@ pipeline {
 
                 THRESHOLD=75
 
-                if (( $(echo "$RACH_SR < $THRESHOLD" | bc -l) )) || (( $(echo "$ATTACH_SR < $THRESHOLD" | bc -l) )); then
+                RACH_CHECK=$(echo "$RACH_SR < $THRESHOLD" | bc -l 2>/dev/null || echo 1)
+                ATTACH_CHECK=$(echo "$ATTACH_SR < $THRESHOLD" | bc -l 2>/dev/null || echo 1)
+
+                if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
                   echo "\n❌ KPI validation FAILED (threshold: $THRESHOLD)"
                   exit 1
                 fi
