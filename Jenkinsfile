@@ -19,7 +19,7 @@ pipeline {
 
                     // Detect changes
                     def changes = sh(
-                        script: "git diff --name-only HEAD~1 HEAD",
+                        script: "git fetch origin main && git diff --name-only origin/main HEAD",
                         returnStdout: true
                     ).trim()
 
