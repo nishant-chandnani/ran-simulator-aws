@@ -24,10 +24,10 @@ pipeline {
 
                     if (!changes.contains("cu-service") && !changes.contains("du-service")) {
                         echo "No changes in CU/DU. Skipping build and push."
-                        env.SKIP_BUILD = "true"
+                        SKIP = true
                     } else {
                         echo "Changes detected in CU/DU. Proceeding with build."
-                        env.SKIP_BUILD = "false"
+                        SKIP = false
                     }
                 }
             }
@@ -35,22 +35,10 @@ pipeline {
 
         stage('Build Images') {
             when {
-                expression { env.SKIP_BUILD == "false" }
+                expression { return !SKIP }
             }
             steps {
                 sh '''
-                # Safety guard
-                if [ "$SKIP_BUILD" = "true" ]; then
-                  echo "Skipping build as no CU/DU changes detected"
-                  exit 0
-                fi
-
-                # Ensure VERSION is set
-                if [ -z "$VERSION" ]; then
-                  echo "VERSION not set, deriving again..."
-                  VERSION=$(git rev-parse --short HEAD)
-                fi
-
                 echo "Using VERSION: $VERSION"
 
                 cd cu-service
@@ -64,7 +52,7 @@ pipeline {
 
         stage('Login to ECR') {
             when {
-                expression { env.SKIP_BUILD == "false" }
+                expression { return !SKIP }
             }
             steps {
                 sh '''
@@ -76,22 +64,10 @@ pipeline {
 
         stage('Tag & Push Images') {
             when {
-                expression { env.SKIP_BUILD == "false" }
+                expression { return !SKIP }
             }
             steps {
                 sh '''
-                # Safety guard
-                if [ "$SKIP_BUILD" = "true" ]; then
-                  echo "Skipping tag & push as no CU/DU changes detected"
-                  exit 0
-                fi
-
-                # Ensure VERSION is set
-                if [ -z "$VERSION" ]; then
-                  echo "VERSION not set in this stage, deriving again..."
-                  VERSION=$(git rev-parse --short HEAD)
-                fi
-
                 echo "Using VERSION for tagging: $VERSION"
 
                 docker tag cu-service:$VERSION $ECR_REGISTRY/ran-simulator-cu:$VERSION
@@ -122,12 +98,6 @@ pipeline {
             steps {
                 sh '''
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
-
-                # Ensure VERSION is set
-                if [ -z "$VERSION" ]; then
-                  echo "VERSION not set in Deploy stage, deriving again..."
-                  VERSION=$(git rev-parse --short HEAD)
-                fi
 
                 echo "Deploying with VERSION: $VERSION"
 
