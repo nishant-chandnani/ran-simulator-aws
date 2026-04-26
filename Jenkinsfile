@@ -75,9 +75,7 @@ pipeline {
                 sh '''
                 echo "Checking service availability..."
                 sleep 10
-                curl -f -X POST http://localhost:30000/attach \
-                -H "Content-Type: application/json" \
-                -d '{"ue_id":"healthcheck"}' || exit 1
+                curl -f http://localhost:30000/metrics || exit 1
                 '''
             }
         }
@@ -131,14 +129,14 @@ pipeline {
                 echo "$CU_RAW"
 
                 # Convert metrics to JSON-like structure for jq
-                DU_JSON=$(echo "$DU_RAW" | awk '{printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
-                CU_JSON=$(echo "$CU_RAW" | awk '{printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
+                DU_JSON=$(echo "$DU_RAW" | awk 'NF==2 {printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
+                CU_JSON=$(echo "$CU_RAW" | awk 'NF==2 {printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
 
                 echo "\nParsed DU JSON: $DU_JSON"
                 echo "Parsed CU JSON: $CU_JSON"
 
-                RACH_SR=$(echo "$DU_JSON" | jq '.rach_sr_percent')
-                ATTACH_SR=$(echo "$CU_JSON" | jq '.attach_sr_percent')
+                RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent')
+                ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent')
 
                 echo "\n===== KPI RESULTS ====="
                 echo "RACH SR   : $RACH_SR"
@@ -159,4 +157,4 @@ pipeline {
             }
         }
     }
-}   
+}  
