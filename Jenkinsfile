@@ -49,13 +49,13 @@ pipeline {
             }
             steps {
                 sh """
-                echo "Using VERSION: \${VERSION}"
+                echo "Using VERSION: \${env.VERSION}"
 
                 cd cu-service
-                docker build -t cu-service:\${VERSION} .
+                docker build -t cu-service:\${env.VERSION} .
 
                 cd ../du-service
-                docker build -t du-service:\${VERSION} .
+                docker build -t du-service:\${env.VERSION} .
                 """
             }
         }
@@ -78,13 +78,13 @@ pipeline {
             }
             steps {
                 sh """
-                echo "Using VERSION for tagging: \${VERSION}"
+                echo "Using VERSION for tagging: \${env.VERSION}"
 
-                docker tag cu-service:\${VERSION} \${ECR_REGISTRY}/ran-simulator-cu:\${VERSION}
-                docker tag du-service:\${VERSION} \${ECR_REGISTRY}/ran-simulator-du:\${VERSION}
+                docker tag cu-service:\${env.VERSION} \${ECR_REGISTRY}/ran-simulator-cu:\${env.VERSION}
+                docker tag du-service:\${env.VERSION} \${ECR_REGISTRY}/ran-simulator-du:\${env.VERSION}
 
-                docker push \${ECR_REGISTRY}/ran-simulator-cu:\${VERSION}
-                docker push \${ECR_REGISTRY}/ran-simulator-du:\${VERSION}
+                docker push \${ECR_REGISTRY}/ran-simulator-cu:\${env.VERSION}
+                docker push \${ECR_REGISTRY}/ran-simulator-du:\${env.VERSION}
                 """
             }
         }
@@ -112,12 +112,12 @@ pipeline {
                 sh """
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                echo "Deploying with VERSION: \${VERSION}"
+                echo "Deploying with VERSION: \${env.VERSION}"
 
                 cd helm-chart
                 helm upgrade --install ran-sim . \
-                  --set cu.tag=\${VERSION} \
-                  --set du.tag=\${VERSION}
+                  --set cu.tag=\${env.VERSION} \
+                  --set du.tag=\${env.VERSION}
                 """
             }
         }
