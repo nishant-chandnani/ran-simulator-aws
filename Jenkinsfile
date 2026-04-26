@@ -136,16 +136,9 @@ pipeline {
                 RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent // 0')
                 ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent // 0')
 
-                # Ensure numeric
-                if ! [[ "$RACH_SR" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-                  echo "Invalid RACH SR value"
-                  exit 1
-                fi
-
-                if ! [[ "$ATTACH_SR" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-                  echo "Invalid ATTACH SR value"
-                  exit 1
-                fi
+                # Ensure numeric using jq
+                echo "$RACH_SR" | jq -e 'numbers' > /dev/null 2>&1 || { echo "Invalid RACH SR value"; exit 1; }
+                echo "$ATTACH_SR" | jq -e 'numbers' > /dev/null 2>&1 || { echo "Invalid ATTACH SR value"; exit 1; }
 
                 echo "\n===== KPI RESULTS ====="
                 echo "RACH SR   : $RACH_SR"
