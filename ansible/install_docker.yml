@@ -22,6 +22,11 @@
       yum:
         name: git
         state: present
+
+    - name: Install bc (required for KPI calculations)
+      yum:
+        name: bc
+        state: present
     
     - name: Install Java 21 (required for Jenkins)
       yum:

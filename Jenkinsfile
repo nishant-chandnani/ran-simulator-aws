@@ -108,15 +108,33 @@ pipeline {
         stage('Metrics Validation') {
             steps {
                 sh '''
-                echo "Checking metrics..."
+                echo "Checking KPI metrics..."
 
-                curl -s http://localhost:30000/metrics | grep -i ue
-                if [ $? -ne 0 ]; then
-                  echo "Metrics validation failed"
+                METRICS=$(curl -s http://localhost:30000/metrics)
+
+                echo "$METRICS"
+
+                # Extract values
+                RACH_SR=$(echo "$METRICS" | grep rach_sr_percent | awk '{print $2}')
+
+                # CU metrics may not always be exposed via DU, so handle safely
+                ATTACH_SR=$(echo "$METRICS" | grep attach_sr_percent | awk '{print $2}')
+
+                echo "RACH SR: $RACH_SR"
+                echo "ATTACH SR: $ATTACH_SR"
+
+                # Default attach SR to 100 if not present (DU-only exposure case)
+                if [ -z "$ATTACH_SR" ]; then
+                  ATTACH_SR=100
+                fi
+
+                # Validation
+                if (( $(echo "$RACH_SR < 80" | bc -l) )) || (( $(echo "$ATTACH_SR < 80" | bc -l) )); then
+                  echo "KPI validation failed"
                   exit 1
                 fi
 
-                echo "Metrics validation passed"
+                echo "KPI validation passed"
                 '''
             }
         }
