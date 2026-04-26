@@ -91,3 +91,14 @@ rach_sr_percent {round(sr, 2)}
 """
 
     return Response(content=metrics_data, media_type="text/plain")
+
+@app.get("/metrics-json")
+def metrics_json():
+    sr = (successful_rach / total_rach_attempts * 100) if total_rach_attempts > 0 else 0
+
+    return {
+        "total_rach_attempts": total_rach_attempts,
+        "successful_rach": successful_rach,
+        "failed_rach": failed_rach,
+        "rach_sr_percent": round(sr, 2)
+    }

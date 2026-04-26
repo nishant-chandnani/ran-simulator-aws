@@ -120,33 +120,31 @@ pipeline {
 
                 sleep 5
 
-                echo "\nFetching DU metrics..."
-                DU_RAW=$(curl -s http://localhost:30000/metrics)
-                echo "$DU_RAW"
+                echo "\nFetching DU metrics (JSON)..."
+                DU_JSON=$(curl -s http://localhost:30000/metrics-json)
+                echo "$DU_JSON"
 
-                echo "\nFetching CU metrics..."
-                CU_RAW=$(curl -s http://localhost:8001/metrics)
-                echo "$CU_RAW"
+                echo "\nFetching CU metrics (JSON)..."
+                CU_JSON=$(curl -s http://localhost:8001/metrics-json)
+                echo "$CU_JSON"
 
-                # Convert metrics to JSON-like structure for jq
-                DU_JSON=$(echo "$DU_RAW" | awk 'NF==2 {printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
-                CU_JSON=$(echo "$CU_RAW" | awk 'NF==2 {printf "\"%s\":%s,", $1, $2}' | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
+                # Validate JSON
+                echo "$DU_JSON" | jq . > /dev/null || { echo "Invalid DU JSON"; exit 1; }
+                echo "$CU_JSON" | jq . > /dev/null || { echo "Invalid CU JSON"; exit 1; }
 
-                echo "\nParsed DU JSON: $DU_JSON"
-                echo "Parsed CU JSON: $CU_JSON"
+                # Extract KPIs safely
+                RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent // 0')
+                ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent // 0')
 
-                RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent')
-                ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent')
-
-                # Handle missing/null values safely
-                if [ -z "$RACH_SR" ] || [ "$RACH_SR" = "null" ]; then
-                  echo "RACH SR missing or invalid"
-                  RACH_SR=0
+                # Ensure numeric
+                if ! [[ "$RACH_SR" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                  echo "Invalid RACH SR value"
+                  exit 1
                 fi
 
-                if [ -z "$ATTACH_SR" ] || [ "$ATTACH_SR" = "null" ]; then
-                  echo "ATTACH SR missing or invalid"
-                  ATTACH_SR=0
+                if ! [[ "$ATTACH_SR" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                  echo "Invalid ATTACH SR value"
+                  exit 1
                 fi
 
                 echo "\n===== KPI RESULTS ====="

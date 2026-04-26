@@ -68,3 +68,16 @@ attach_sr_percent {round(sr, 2)}
 """
 
     return Response(content=metrics_data, media_type="text/plain")
+
+
+# JSON version of metrics endpoint
+@app.get("/metrics-json")
+def metrics_json():
+    sr = (successful_attach / total_requests * 100) if total_requests > 0 else 0
+
+    return {
+        "total_requests": total_requests,
+        "successful_attach": successful_attach,
+        "failed_attach": failed_attach,
+        "attach_sr_percent": round(sr, 2)
+    }
