@@ -75,7 +75,9 @@ pipeline {
                 sh '''
                 echo "Checking service availability..."
                 sleep 10
-                curl -f http://localhost:30000/attach || exit 1
+                curl -f -X POST http://localhost:30000/attach \
+                -H "Content-Type: application/json" \
+                -d '{"ue_id":"healthcheck"}' || exit 1
                 '''
             }
         }
@@ -115,4 +117,4 @@ pipeline {
             }
         }
     }
-}
+}   
