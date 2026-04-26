@@ -22,13 +22,17 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
+                    def skipLocal
                     if (!changes.contains("cu-service") && !changes.contains("du-service")) {
                         echo "No changes in CU/DU. Skipping build and push."
-                        SKIP = true
+                        skipLocal = true
                     } else {
                         echo "Changes detected in CU/DU. Proceeding with build."
-                        SKIP = false
+                        skipLocal = false
                     }
+
+                    // assign once to global variable
+                    SKIP = skipLocal
                 }
             }
         }
@@ -125,6 +129,10 @@ pipeline {
         stage('Load Test') {
             steps {
                 sh '''
+                echo "Resetting metrics before load test..."
+                curl -s -X POST http://localhost:30000/reset-metrics || true
+                sleep 2
+
                 echo "Starting load test (10 rounds x 30 requests)..."
 
                 TOTAL_REQUESTS=0
