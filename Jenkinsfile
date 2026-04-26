@@ -17,11 +17,16 @@ pipeline {
                     env.VERSION = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     VERSION = env.VERSION
 
-                    // Detect changes
-                    def changes = sh(
-                        script: "git fetch origin main && git diff --name-only origin/main HEAD",
-                        returnStdout: true
-                    ).trim()
+                    // Detect changes using Jenkins built-in changeSets
+                    def changes = ""
+                    for (changeSet in currentBuild.changeSets) {
+                        for (entry in changeSet.items) {
+                            for (file in entry.affectedFiles) {
+                                changes += file.path + "\n"
+                            }
+                        }
+                    }
+                    echo "Detected changed files:\n${changes}"
 
                     def skipLocal
                     if (!changes.contains("cu-service") && !changes.contains("du-service")) {
