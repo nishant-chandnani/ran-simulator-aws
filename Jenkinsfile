@@ -10,6 +10,29 @@ pipeline {
 
     stages {
 
+        stage('Set Version & Check Changes') {
+            steps {
+                script {
+                    // Set VERSION as git commit hash
+                    env.VERSION = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+
+                    // Detect changes
+                    def changes = sh(
+                        script: "git diff --name-only HEAD~1 HEAD",
+                        returnStdout: true
+                    ).trim()
+
+                    if (!changes.contains("cu-service") && !changes.contains("du-service")) {
+                        echo "No changes in CU/DU. Skipping build and push."
+                        env.SKIP_BUILD = "true"
+                    } else {
+                        echo "Changes detected in CU/DU. Proceeding with build."
+                        env.SKIP_BUILD = "false"
+                    }
+                }
+            }
+        }
+
         stage('Build Images') {
             when {
                 expression { env.SKIP_BUILD == "false" }
@@ -49,29 +72,6 @@ pipeline {
                 docker push $ECR_REGISTRY/ran-simulator-cu:${VERSION}
                 docker push $ECR_REGISTRY/ran-simulator-du:${VERSION}
                 '''
-            }
-        }
-
-        stage('Set Version & Check Changes') {
-            steps {
-                script {
-                    // Set VERSION as git commit hash
-                    env.VERSION = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-
-                    // Detect changes
-                    def changes = sh(
-                        script: "git diff --name-only HEAD~1 HEAD",
-                        returnStdout: true
-                    ).trim()
-
-                    if (!changes.contains("cu-service") && !changes.contains("du-service")) {
-                        echo "No changes in CU/DU. Skipping build and push."
-                        env.SKIP_BUILD = "true"
-                    } else {
-                        echo "Changes detected in CU/DU. Proceeding with build."
-                        env.SKIP_BUILD = "false"
-                    }
-                }
             }
         }
 
@@ -215,4 +215,4 @@ pipeline {
             }
         }
     }
-}  
+} 
