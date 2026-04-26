@@ -39,11 +39,25 @@ pipeline {
             }
             steps {
                 sh '''
+                # Safety guard
+                if [ "$SKIP_BUILD" = "true" ]; then
+                  echo "Skipping build as no CU/DU changes detected"
+                  exit 0
+                fi
+
+                # Ensure VERSION is set
+                if [ -z "$VERSION" ]; then
+                  echo "VERSION not set, deriving again..."
+                  VERSION=$(git rev-parse --short HEAD)
+                fi
+
+                echo "Using VERSION: $VERSION"
+
                 cd cu-service
-                docker build -t cu-service:${VERSION} .
+                docker build -t cu-service:$VERSION .
 
                 cd ../du-service
-                docker build -t du-service:${VERSION} .
+                docker build -t du-service:$VERSION .
                 '''
             }
         }
