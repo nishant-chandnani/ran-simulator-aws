@@ -93,7 +93,7 @@ pipeline {
                   for i in {1..20}; do
                     curl -s -X POST http://localhost:30000/attach \
                     -H "Content-Type: application/json" \
-                    -d "{\"ue_id\":\"UE$i\"}" &
+                    -d '{"ue_id":"UE'"$i"'"}' &
                   done
 
                   wait
