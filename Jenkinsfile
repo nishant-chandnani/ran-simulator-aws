@@ -109,12 +109,12 @@ pipeline {
                 sh """
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                echo "Deploying with VERSION: \${env.VERSION}"
+                echo "Deploying with VERSION: ${env.VERSION}"
 
                 cd helm-chart
                 helm upgrade --install ran-sim . \
-                  --set cu.tag=\${env.VERSION} \
-                  --set du.tag=\${env.VERSION}
+                  --set cu.tag=${env.VERSION} \
+                  --set du.tag=${env.VERSION}
                 """
             }
         }
