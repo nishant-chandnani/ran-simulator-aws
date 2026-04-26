@@ -147,17 +147,18 @@ pipeline {
                 # Cleanup
                 kill $PF_PID || true
 
-                THRESHOLD=75
+                RACH_THRESHOLD=75
+                ATTACH_THRESHOLD=80
 
-                RACH_CHECK=$(echo "$RACH_SR < $THRESHOLD" | bc -l 2>/dev/null || echo 1)
-                ATTACH_CHECK=$(echo "$ATTACH_SR < $THRESHOLD" | bc -l 2>/dev/null || echo 1)
+                RACH_CHECK=$(echo "$RACH_SR < $RACH_THRESHOLD" | bc -l 2>/dev/null || echo 1)
+                ATTACH_CHECK=$(echo "$ATTACH_SR < $ATTACH_THRESHOLD" | bc -l 2>/dev/null || echo 1)
 
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
-                  echo "\n❌ KPI validation FAILED (threshold: $THRESHOLD)"
+                  echo "\n❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD, ATTACH threshold: $ATTACH_THRESHOLD)"
                   exit 1
                 fi
 
-                echo "\n✅ KPI validation PASSED (threshold: $THRESHOLD)"
+                echo "\n✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD, ATTACH threshold: $ATTACH_THRESHOLD)"
                 '''
             }
         }
