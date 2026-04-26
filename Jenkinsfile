@@ -15,6 +15,7 @@ pipeline {
                 script {
                     // Set VERSION as git commit hash
                     env.VERSION = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    VERSION = env.VERSION
 
                     // Detect changes
                     def changes = sh(
@@ -42,15 +43,15 @@ pipeline {
                 expression { return !SKIP }
             }
             steps {
-                sh '''
-                echo "Using VERSION: $VERSION"
+                sh """
+                echo "Using VERSION: \${VERSION}"
 
                 cd cu-service
-                docker build -t cu-service:$VERSION .
+                docker build -t cu-service:\${VERSION} .
 
                 cd ../du-service
-                docker build -t du-service:$VERSION .
-                '''
+                docker build -t du-service:\${VERSION} .
+                """
             }
         }
 
@@ -71,15 +72,15 @@ pipeline {
                 expression { return !SKIP }
             }
             steps {
-                sh '''
-                echo "Using VERSION for tagging: $VERSION"
+                sh """
+                echo "Using VERSION for tagging: \${VERSION}"
 
-                docker tag cu-service:$VERSION $ECR_REGISTRY/ran-simulator-cu:$VERSION
-                docker tag du-service:$VERSION $ECR_REGISTRY/ran-simulator-du:$VERSION
+                docker tag cu-service:\${VERSION} \${ECR_REGISTRY}/ran-simulator-cu:\${VERSION}
+                docker tag du-service:\${VERSION} \${ECR_REGISTRY}/ran-simulator-du:\${VERSION}
 
-                docker push $ECR_REGISTRY/ran-simulator-cu:$VERSION
-                docker push $ECR_REGISTRY/ran-simulator-du:$VERSION
-                '''
+                docker push \${ECR_REGISTRY}/ran-simulator-cu:\${VERSION}
+                docker push \${ECR_REGISTRY}/ran-simulator-du:\${VERSION}
+                """
             }
         }
 
@@ -103,16 +104,16 @@ pipeline {
                 expression { return !SKIP }
             }
             steps {
-                sh '''
+                sh """
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                echo "Deploying with VERSION: $VERSION"
+                echo "Deploying with VERSION: \${VERSION}"
 
                 cd helm-chart
                 helm upgrade --install ran-sim . \
-                  --set cu.tag=${VERSION} \
-                  --set du.tag=${VERSION}
-                '''
+                  --set cu.tag=\${VERSION} \
+                  --set du.tag=\${VERSION}
+                """
             }
         }
 
