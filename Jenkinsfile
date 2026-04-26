@@ -4,12 +4,16 @@ pipeline {
     environment {
         AWS_REGION = "ap-southeast-2"
         ECR_REGISTRY = "276594885557.dkr.ecr.ap-southeast-2.amazonaws.com"
-        VERSION = "build-${BUILD_NUMBER}"
+        VERSION = ""
+        SKIP_BUILD = "false"
     }
 
     stages {
 
         stage('Build Images') {
+            when {
+                expression { env.SKIP_BUILD == "false" }
+            }
             steps {
                 sh '''
                 cd cu-service
@@ -22,6 +26,9 @@ pipeline {
         }
 
         stage('Login to ECR') {
+            when {
+                expression { env.SKIP_BUILD == "false" }
+            }
             steps {
                 sh '''
                 aws ecr get-login-password --region $AWS_REGION | \
@@ -31,6 +38,9 @@ pipeline {
         }
 
         stage('Tag & Push Images') {
+            when {
+                expression { env.SKIP_BUILD == "false" }
+            }
             steps {
                 sh '''
                 docker tag cu-service:${VERSION} $ECR_REGISTRY/ran-simulator-cu:${VERSION}
@@ -39,6 +49,29 @@ pipeline {
                 docker push $ECR_REGISTRY/ran-simulator-cu:${VERSION}
                 docker push $ECR_REGISTRY/ran-simulator-du:${VERSION}
                 '''
+            }
+        }
+
+        stage('Set Version & Check Changes') {
+            steps {
+                script {
+                    // Set VERSION as git commit hash
+                    env.VERSION = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+
+                    // Detect changes
+                    def changes = sh(
+                        script: "git diff --name-only HEAD~1 HEAD",
+                        returnStdout: true
+                    ).trim()
+
+                    if (!changes.contains("cu-service") && !changes.contains("du-service")) {
+                        echo "No changes in CU/DU. Skipping build and push."
+                        env.SKIP_BUILD = "true"
+                    } else {
+                        echo "Changes detected in CU/DU. Proceeding with build."
+                        env.SKIP_BUILD = "false"
+                    }
+                }
             }
         }
 
