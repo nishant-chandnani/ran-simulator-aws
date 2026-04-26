@@ -122,7 +122,15 @@ pipeline {
             steps {
                 sh '''
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
-                
+
+                # Ensure VERSION is set
+                if [ -z "$VERSION" ]; then
+                  echo "VERSION not set in Deploy stage, deriving again..."
+                  VERSION=$(git rev-parse --short HEAD)
+                fi
+
+                echo "Deploying with VERSION: $VERSION"
+
                 cd helm-chart
                 helm upgrade --install ran-sim . \
                   --set cu.tag=${VERSION} \
