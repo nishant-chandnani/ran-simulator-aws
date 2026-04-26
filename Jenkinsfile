@@ -133,8 +133,8 @@ pipeline {
                 echo "$CU_JSON" | jq . > /dev/null || { echo "Invalid CU JSON"; exit 1; }
 
                 # Extract KPIs safely
-                RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent // 0')
-                ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent // 0')
+                RACH_SR=$(echo "$DU_JSON" | jq -r '.rach_sr_percent // 0' | xargs)
+                ATTACH_SR=$(echo "$CU_JSON" | jq -r '.attach_sr_percent // 0' | xargs)
 
                 # Ensure numeric using jq
                 echo "$RACH_SR" | jq -e 'numbers' > /dev/null 2>&1 || { echo "Invalid RACH SR value"; exit 1; }
@@ -150,8 +150,12 @@ pipeline {
                 RACH_THRESHOLD=75
                 ATTACH_THRESHOLD=80
 
-                RACH_CHECK=$(echo "$RACH_SR < $RACH_THRESHOLD" | bc -l 2>/dev/null || echo 1)
-                ATTACH_CHECK=$(echo "$ATTACH_SR < $ATTACH_THRESHOLD" | bc -l 2>/dev/null || echo 1)
+                RACH_CHECK=$(echo "$RACH_SR < $RACH_THRESHOLD" | bc -l 2>/dev/null)
+                ATTACH_CHECK=$(echo "$ATTACH_SR < $ATTACH_THRESHOLD" | bc -l 2>/dev/null)
+
+                # Fail safe if bc fails or empty
+                if [ -z "$RACH_CHECK" ]; then RACH_CHECK=1; fi
+                if [ -z "$ATTACH_CHECK" ]; then ATTACH_CHECK=1; fi
 
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
                   echo "\n❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD, ATTACH threshold: $ATTACH_THRESHOLD)"
