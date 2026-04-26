@@ -105,9 +105,6 @@ pipeline {
         }
 
         stage('Deploy to Kubernetes') {
-            when {
-                expression { return !SKIP }
-            }
             steps {
                 sh """
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
