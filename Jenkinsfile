@@ -5,7 +5,7 @@ pipeline {
     environment {
         AWS_REGION = "ap-southeast-2"
         ECR_REGISTRY = "276594885557.dkr.ecr.ap-southeast-2.amazonaws.com"
-        VERSION = ""
+        VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
     }
 
     stages {
@@ -13,9 +13,6 @@ pipeline {
         stage('Set Version & Check Changes') {
             steps {
                 script {
-                    // Set VERSION as git commit hash
-                    env.VERSION = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                    VERSION = env.VERSION
 
                     // Detect changes using Jenkins built-in changeSets
                     def changes = ""
