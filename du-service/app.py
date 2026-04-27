@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 CU_HOST = os.getenv("CU_HOST", "cu-service:8001")
 CU_URL = f"http://{CU_HOST}/attach"
 
+# CI/CD code-change validation test: harmless DU service comment
 # DU KPI counters
 total_rach_attempts = 0
 successful_rach = 0
