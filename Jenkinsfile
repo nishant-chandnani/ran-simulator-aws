@@ -207,16 +207,22 @@ pipeline {
                 for round in $(seq 1 10); do
                   echo "\n===== ROUND $round ====="
 
+                  CURL_PIDS=""
+
                   for i in $(seq 1 30); do
                     curl -s --connect-timeout 3 --max-time 10 -X POST http://localhost:18000/attach \
                     -H "Content-Type: application/json" \
                     -d '{"ue_id":"UE'"$round""$i"'"}' &
+                    CURL_PIDS="$CURL_PIDS $!"
                   done
 
-                  wait || {
-                    echo "One or more attach requests failed or timed out"
-                    exit 1
-                  }
+                  for pid in $CURL_PIDS; do
+                    wait $pid || {
+                      echo "One or more attach requests failed or timed out"
+                      exit 1
+                    }
+                  done
+
                   TOTAL_REQUESTS=$((TOTAL_REQUESTS + 30))
                   sleep 1
                 done
