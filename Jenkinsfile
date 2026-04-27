@@ -1,4 +1,5 @@
-def SKIP = false
+def SKIP_BUILD = false
+def IMAGE_TAG = ""
 pipeline {
     agent any
 
@@ -13,7 +14,6 @@ pipeline {
         stage('Set Version & Check Changes') {
             steps {
                 script {
-
                     // Detect changes using Jenkins built-in changeSets
                     def changes = ""
                     for (changeSet in currentBuild.changeSets) {
@@ -23,24 +23,46 @@ pipeline {
                             }
                         }
                     }
-                    echo "Detected changed files:\n${changes}"
 
-                    if (!changes.contains("cu-service") && !changes.contains("du-service")) {
-                        echo "No CU/DU code changes detected."
-                        echo "However, pipeline is configured to always build & deploy for consistency."
+                    echo "Detected changed files:\n${changes}"
+                    echo "Current Git image tag candidate: ${env.VERSION}"
+
+                    def cuDuChanged = changes.contains("cu-service/") || changes.contains("du-service/")
+
+                    if (cuDuChanged) {
+                        echo "CU/DU code changes detected. Build, push, and deploy will use new image tag: ${env.VERSION}"
+                        SKIP_BUILD = false
+                        IMAGE_TAG = env.VERSION
                     } else {
-                        echo "Changes detected in CU/DU. Proceeding with build."
+                        echo "No CU/DU code changes detected. Build and push will be skipped."
+
+                        def deployedTag = sh(
+                            script: '''
+                                export KUBECONFIG=/var/lib/jenkins/.kube/config
+                                kubectl get deployment cu-deployment -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}'
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        if (deployedTag) {
+                            echo "Reusing currently deployed image tag: ${deployedTag}"
+                            SKIP_BUILD = true
+                            IMAGE_TAG = deployedTag
+                        } else {
+                            echo "No deployed CU image tag found. Falling back to full build using tag: ${env.VERSION}"
+                            SKIP_BUILD = false
+                            IMAGE_TAG = env.VERSION
+                        }
                     }
 
-                    // Always build & deploy to ensure cluster consistency
-                    SKIP = false
+                    echo "Final decision -> SKIP_BUILD=${SKIP_BUILD}, IMAGE_TAG=${IMAGE_TAG}"
                 }
             }
         }
 
         stage('Build Images') {
             when {
-                expression { return !SKIP }
+                expression { return !SKIP_BUILD }
             }
             steps {
                 sh """
@@ -57,7 +79,7 @@ pipeline {
 
         stage('Login to ECR') {
             when {
-                expression { return !SKIP }
+                expression { return !SKIP_BUILD }
             }
             steps {
                 sh '''
@@ -69,7 +91,7 @@ pipeline {
 
         stage('Tag & Push Images') {
             when {
-                expression { return !SKIP }
+                expression { return !SKIP_BUILD }
             }
             steps {
                 sh """
@@ -104,12 +126,12 @@ pipeline {
                 sh """
                 export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                echo "Deploying with VERSION: ${env.VERSION}"
+                echo "Deploying with IMAGE_TAG: ${IMAGE_TAG}"
 
                 cd helm-chart
                 helm upgrade --install ran-sim . \
-                  --set cu.tag=${env.VERSION} \
-                  --set du.tag=${env.VERSION}
+                  --set cu.tag=${IMAGE_TAG} \
+                  --set du.tag=${IMAGE_TAG}
                 """
             }
         }
