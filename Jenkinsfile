@@ -208,12 +208,15 @@ pipeline {
                   echo "\n===== ROUND $round ====="
 
                   for i in $(seq 1 30); do
-                    curl -s -X POST http://localhost:18000/attach \
+                    curl -s --connect-timeout 3 --max-time 10 -X POST http://localhost:18000/attach \
                     -H "Content-Type: application/json" \
                     -d '{"ue_id":"UE'"$round""$i"'"}' &
                   done
 
-                  wait
+                  wait || {
+                    echo "One or more attach requests failed or timed out"
+                    exit 1
+                  }
                   TOTAL_REQUESTS=$((TOTAL_REQUESTS + 30))
                   sleep 1
                 done
