@@ -15,6 +15,8 @@ total_requests = 0
 successful_attach = 0
 failed_attach = 0
 
+#adding a harmless comment
+
 class UERequest(BaseModel):
     ue_id: str
 
