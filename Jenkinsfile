@@ -1,5 +1,7 @@
-def SHOULD_BUILD_IMAGES = false
-def IMAGE_TAG = ""
+def SHOULD_BUILD_CU_IMAGE = false
+def SHOULD_BUILD_DU_IMAGE = false
+def CU_IMAGE_TAG = ""
+def DU_IMAGE_TAG = ""
 pipeline {
     agent any
 
@@ -28,54 +30,87 @@ pipeline {
 
                     echo "Detected changed files:\n${changes}"
                     echo "Current Git image tag candidate: ${env.VERSION}"
-
-                    def cuDuChanged = changes.readLines().any { changedFile ->
-                        changedFile.startsWith("cu-service/") || changedFile.startsWith("du-service/")
+                    def cuChanged = changes.readLines().any { changedFile ->
+                        changedFile.startsWith("cu-service/")
                     }
 
-                    if (cuDuChanged) {
-                        echo "CU/DU code changes detected. Build, push, and deploy will use new image tag: ${env.VERSION}"
-                        SHOULD_BUILD_IMAGES = true
-                        IMAGE_TAG = env.VERSION
+                    def duChanged = changes.readLines().any { changedFile ->
+                        changedFile.startsWith("du-service/")
+                    }
+
+                    def deployedCuTag = sh(
+                        script: '''
+                            export KUBECONFIG="$KUBECONFIG_PATH"
+                            kubectl get deployment cu-deployment -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}'
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    def deployedDuTag = sh(
+                        script: '''
+                            export KUBECONFIG="$KUBECONFIG_PATH"
+                            kubectl get deployment du-deployment -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}'
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    if (cuChanged) {
+                        echo "CU code changes detected. CU image will be built and pushed with new tag: ${env.VERSION}"
+                        SHOULD_BUILD_CU_IMAGE = true
+                        CU_IMAGE_TAG = env.VERSION
+                    } else if (deployedCuTag) {
+                        echo "No CU code changes detected. Reusing currently deployed CU image tag: ${deployedCuTag}"
+                        SHOULD_BUILD_CU_IMAGE = false
+                        CU_IMAGE_TAG = deployedCuTag
                     } else {
-                        echo "No CU/DU code changes detected. Build and push will be skipped; deployment will reuse the currently deployed image tag."
-
-                        def deployedTag = sh(
-                            script: '''
-                                export KUBECONFIG="$KUBECONFIG_PATH"
-                                kubectl get deployment cu-deployment -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}'
-                            ''',
-                            returnStdout: true
-                        ).trim()
-
-                        if (deployedTag) {
-                            echo "Reusing currently deployed image tag: ${deployedTag}"
-                            SHOULD_BUILD_IMAGES = false
-                            IMAGE_TAG = deployedTag
-                        } else {
-                            echo "No deployed CU image tag found. Falling back to full build using tag: ${env.VERSION}"
-                            SHOULD_BUILD_IMAGES = true
-                            IMAGE_TAG = env.VERSION
-                        }
+                        echo "No deployed CU image tag found. Falling back to CU build using tag: ${env.VERSION}"
+                        SHOULD_BUILD_CU_IMAGE = true
+                        CU_IMAGE_TAG = env.VERSION
                     }
 
-                    echo "Final decision -> SHOULD_BUILD_IMAGES=${SHOULD_BUILD_IMAGES}, IMAGE_TAG=${IMAGE_TAG}"
+                    if (duChanged) {
+                        echo "DU code changes detected. DU image will be built and pushed with new tag: ${env.VERSION}"
+                        SHOULD_BUILD_DU_IMAGE = true
+                        DU_IMAGE_TAG = env.VERSION
+                    } else if (deployedDuTag) {
+                        echo "No DU code changes detected. Reusing currently deployed DU image tag: ${deployedDuTag}"
+                        SHOULD_BUILD_DU_IMAGE = false
+                        DU_IMAGE_TAG = deployedDuTag
+                    } else {
+                        echo "No deployed DU image tag found. Falling back to DU build using tag: ${env.VERSION}"
+                        SHOULD_BUILD_DU_IMAGE = true
+                        DU_IMAGE_TAG = env.VERSION
+                    }
+
+                    echo "Final decision -> SHOULD_BUILD_CU_IMAGE=${SHOULD_BUILD_CU_IMAGE}, CU_IMAGE_TAG=${CU_IMAGE_TAG}"
+                    echo "Final decision -> SHOULD_BUILD_DU_IMAGE=${SHOULD_BUILD_DU_IMAGE}, DU_IMAGE_TAG=${DU_IMAGE_TAG}"
                 }
             }
         }
 
-        stage('Build Images') {
+        stage('Build CU Image') {
             when {
-                expression { return SHOULD_BUILD_IMAGES }
+                expression { return SHOULD_BUILD_CU_IMAGE }
             }
             steps {
                 sh """
-                echo "Using VERSION: ${env.VERSION}"
+                echo "Building CU image using VERSION: ${env.VERSION}"
 
                 cd cu-service
                 docker build -t cu-service:${env.VERSION} .
+                """
+            }
+        }
 
-                cd ../du-service
+        stage('Build DU Image') {
+            when {
+                expression { return SHOULD_BUILD_DU_IMAGE }
+            }
+            steps {
+                sh """
+                echo "Building DU image using VERSION: ${env.VERSION}"
+
+                cd du-service
                 docker build -t du-service:${env.VERSION} .
                 """
             }
@@ -83,7 +118,7 @@ pipeline {
 
         stage('Login to ECR') {
             when {
-                expression { return SHOULD_BUILD_IMAGES }
+                expression { return SHOULD_BUILD_CU_IMAGE || SHOULD_BUILD_DU_IMAGE }
             }
             steps {
                 sh '''
@@ -93,18 +128,30 @@ pipeline {
             }
         }
 
-        stage('Tag & Push Images') {
+
+        stage('Tag & Push CU Image') {
             when {
-                expression { return SHOULD_BUILD_IMAGES }
+                expression { return SHOULD_BUILD_CU_IMAGE }
             }
             steps {
                 sh """
-                echo "Using VERSION for tagging: ${env.VERSION}"
+                echo "Tagging and pushing CU image with VERSION: ${env.VERSION}"
 
                 docker tag cu-service:${env.VERSION} ${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}-cu:${env.VERSION}
-                docker tag du-service:${env.VERSION} ${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}-du:${env.VERSION}
-
                 docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}-cu:${env.VERSION}
+                """
+            }
+        }
+
+        stage('Tag & Push DU Image') {
+            when {
+                expression { return SHOULD_BUILD_DU_IMAGE }
+            }
+            steps {
+                sh """
+                echo "Tagging and pushing DU image with VERSION: ${env.VERSION}"
+
+                docker tag du-service:${env.VERSION} ${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}-du:${env.VERSION}
                 docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}-du:${env.VERSION}
                 """
             }
@@ -130,12 +177,13 @@ pipeline {
                 sh """
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
-                echo "Deploying with IMAGE_TAG: ${IMAGE_TAG}"
+                echo "Deploying CU with CU_IMAGE_TAG: ${CU_IMAGE_TAG}"
+                echo "Deploying DU with DU_IMAGE_TAG: ${DU_IMAGE_TAG}"
 
                 cd helm-chart
                 helm upgrade --install ran-sim . \
-                  --set cu.tag=${IMAGE_TAG} \
-                  --set du.tag=${IMAGE_TAG}
+                  --set cu.tag=${CU_IMAGE_TAG} \
+                  --set du.tag=${DU_IMAGE_TAG}
 
                 echo "Waiting for CU and DU deployments to become ready..."
                 kubectl rollout status deployment/cu-deployment --timeout=120s
