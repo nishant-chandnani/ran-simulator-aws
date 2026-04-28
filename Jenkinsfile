@@ -185,6 +185,10 @@ pipeline {
                   --set cu.tag=${CU_IMAGE_TAG} \
                   --set du.tag=${DU_IMAGE_TAG}
 
+                echo "Forcing fresh rollout after deployment..."
+                kubectl rollout restart deployment cu-deployment
+                kubectl rollout restart deployment du-deployment
+                
                 echo "Waiting for CU and DU deployments to become ready..."
                 kubectl rollout status deployment/cu-deployment --timeout=120s
                 kubectl rollout status deployment/du-deployment --timeout=120s
