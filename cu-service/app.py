@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 total_requests = 0
 successful_attach = 0
 failed_attach = 0
+last_attach_latency_ms = 0.0
 
 #adding a harmless comment
 
@@ -22,12 +23,14 @@ class UERequest(BaseModel):
 
 @app.post("/attach")
 def attach(req: UERequest):
-    global total_requests, successful_attach, failed_attach
+    global total_requests, successful_attach, failed_attach, last_attach_latency_ms
 
     total_requests += 1
 
     processing_time = random.uniform(0.1, 0.5)
     time.sleep(processing_time)
+    latency_ms = round(processing_time * 1000, 2)
+    last_attach_latency_ms = latency_ms
 
     # Simulate failure (20%)
     if random.random() < 0.2:
@@ -43,7 +46,7 @@ def attach(req: UERequest):
         return {
             "status": "ATTACH_FAILED",
             "reason": reason,
-            "latency_ms": round(processing_time * 1000, 2)
+            "latency_ms": latency_ms
         }
 
     # Success case
@@ -54,7 +57,7 @@ def attach(req: UERequest):
     return {
         "status": "ATTACH_SUCCESS",
         "ue_id": req.ue_id,
-        "latency_ms": round(processing_time * 1000, 2)
+        "latency_ms": latency_ms
     }
 
 
@@ -67,6 +70,7 @@ total_requests {total_requests}
 successful_attach {successful_attach}
 failed_attach {failed_attach}
 attach_sr_percent {round(sr, 2)}
+last_attach_latency_ms {last_attach_latency_ms}
 """
 
     return Response(content=metrics_data, media_type="text/plain")
@@ -81,16 +85,18 @@ def metrics_json():
         "total_requests": total_requests,
         "successful_attach": successful_attach,
         "failed_attach": failed_attach,
-        "attach_sr_percent": round(sr, 2)
+        "attach_sr_percent": round(sr, 2),
+        "last_attach_latency_ms": last_attach_latency_ms
     }
 
 @app.post("/reset-metrics")
 def reset_metrics():
-    global total_requests, successful_attach, failed_attach
+    global total_requests, successful_attach, failed_attach, last_attach_latency_ms
 
     total_requests = 0
     successful_attach = 0
     failed_attach = 0
+    last_attach_latency_ms = 0.0
 
     return {
         "status": "CU metrics reset"

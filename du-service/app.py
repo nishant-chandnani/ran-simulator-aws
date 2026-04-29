@@ -18,13 +18,14 @@ CU_URL = f"http://{CU_HOST}/attach"
 total_rach_attempts = 0
 successful_rach = 0
 failed_rach = 0
+last_end_to_end_latency_ms = 0.0
 
 class UERequest(BaseModel):
     ue_id: str
 
 @app.post("/attach")
 def attach(req: UERequest):
-    global total_rach_attempts, successful_rach, failed_rach
+    global total_rach_attempts, successful_rach, failed_rach, last_end_to_end_latency_ms
 
     total_rach_attempts += 1
 
@@ -52,13 +53,15 @@ def attach(req: UERequest):
         )
 
         total_time = (time.time() - start_time) * 1000
+        end_to_end_latency_ms = round(total_time, 2)
+        last_end_to_end_latency_ms = end_to_end_latency_ms
 
         logging.info(f"{req.ue_id} → RACH SUCCESS → forwarded to CU")
 
         return {
             "du_status": "FORWARDED",
             "cu_response": cu_response.json(),
-            "end_to_end_latency_ms": round(total_time, 2)
+            "end_to_end_latency_ms": end_to_end_latency_ms
         }
 
     except requests.exceptions.Timeout:
@@ -88,6 +91,7 @@ total_rach_attempts {total_rach_attempts}
 successful_rach {successful_rach}
 failed_rach {failed_rach}
 rach_sr_percent {round(sr, 2)}
+last_end_to_end_latency_ms {last_end_to_end_latency_ms}
 """
 
     return Response(content=metrics_data, media_type="text/plain")
@@ -100,18 +104,20 @@ def metrics_json():
         "total_rach_attempts": total_rach_attempts,
         "successful_rach": successful_rach,
         "failed_rach": failed_rach,
-        "rach_sr_percent": round(sr, 2)
+        "rach_sr_percent": round(sr, 2),
+        "last_end_to_end_latency_ms": last_end_to_end_latency_ms
     }
 
 
 # Endpoint to reset DU metrics
 @app.post("/reset-metrics")
 def reset_metrics():
-    global total_rach_attempts, successful_rach, failed_rach
+    global total_rach_attempts, successful_rach, failed_rach, last_end_to_end_latency_ms
 
     total_rach_attempts = 0
     successful_rach = 0
     failed_rach = 0
+    last_end_to_end_latency_ms = 0.0
 
     return {
         "status": "DU metrics reset"
