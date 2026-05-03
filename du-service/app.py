@@ -14,6 +14,11 @@ logging.basicConfig(level=logging.INFO)
 CU_HOST = os.getenv("CU_HOST", "cu-service:8001")
 CU_URL = f"http://{CU_HOST}/attach"
 
+# Runtime metadata injected by Kubernetes/Helm
+PIPELINE_RUN_ID = os.getenv("PIPELINE_RUN_ID", "manual")
+APP_VERSION = os.getenv("APP_VERSION", "unknown")
+METRIC_LABELS = f'app="du",pipeline_run_id="{PIPELINE_RUN_ID}",app_version="{APP_VERSION}"'
+
 # DU KPI counters
 total_rach_attempts = 0
 successful_rach = 0
@@ -97,14 +102,15 @@ def metrics():
     exposed_min_end_to_end_latency_ms = min_end_to_end_latency_ms if min_end_to_end_latency_ms is not None else 0.0
 
     metrics_data = f"""
-total_rach_attempts {total_rach_attempts}
-successful_rach {successful_rach}
-failed_rach {failed_rach}
-rach_sr_percent {round(sr, 2)}
-min_end_to_end_latency_ms {exposed_min_end_to_end_latency_ms}
-max_end_to_end_latency_ms {max_end_to_end_latency_ms}
-avg_end_to_end_latency_ms {round(avg_end_to_end_latency_ms, 2)}
-end_to_end_latency_samples {end_to_end_latency_samples}
+ran_sim_build_info{{{METRIC_LABELS}}} 1
+total_rach_attempts{{{METRIC_LABELS}}} {total_rach_attempts}
+successful_rach{{{METRIC_LABELS}}} {successful_rach}
+failed_rach{{{METRIC_LABELS}}} {failed_rach}
+rach_sr_percent{{{METRIC_LABELS}}} {round(sr, 2)}
+min_end_to_end_latency_ms{{{METRIC_LABELS}}} {exposed_min_end_to_end_latency_ms}
+max_end_to_end_latency_ms{{{METRIC_LABELS}}} {max_end_to_end_latency_ms}
+avg_end_to_end_latency_ms{{{METRIC_LABELS}}} {round(avg_end_to_end_latency_ms, 2)}
+end_to_end_latency_samples{{{METRIC_LABELS}}} {end_to_end_latency_samples}
 """
 
     return Response(content=metrics_data, media_type="text/plain")
@@ -116,6 +122,9 @@ def metrics_json():
     exposed_min_end_to_end_latency_ms = min_end_to_end_latency_ms if min_end_to_end_latency_ms is not None else 0.0
 
     return {
+        "app": "du",
+        "pipeline_run_id": PIPELINE_RUN_ID,
+        "app_version": APP_VERSION,
         "total_rach_attempts": total_rach_attempts,
         "successful_rach": successful_rach,
         "failed_rach": failed_rach,

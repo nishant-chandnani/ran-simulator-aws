@@ -42,6 +42,14 @@ resource "aws_security_group" "jenkins_sg" {
   }
 
   ingress {
+    description = "Grafana NodePort"
+    from_port   = 30300
+    to_port     = 30300
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     description = "Kubernetes API"
     from_port   = 6443
     to_port     = 6443
@@ -104,17 +112,32 @@ resource "aws_instance" "jenkins_server" {
   tags = {
     Name = "jenkins-server"
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Allocate Elastic IP
+resource "aws_eip" "jenkins_eip" {
+  domain = "vpc"
+}
+
+# Associate Elastic IP with EC2 instance
+resource "aws_eip_association" "jenkins_eip_assoc" {
+  instance_id   = aws_instance.jenkins_server.id
+  allocation_id = aws_eip.jenkins_eip.id
 }
 
 # Output public IP of EC2
 output "ec2_public_ip" {
-  value = aws_instance.jenkins_server.public_ip
+  value = aws_eip.jenkins_eip.public_ip
 } 
 
 resource "local_file" "ansible_inventory" {
   content = <<EOT
 [web]
-${aws_instance.jenkins_server.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/id_rsa
+${aws_eip.jenkins_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/id_rsa
 EOT
 
   filename = "${path.module}/../ansible/hosts"

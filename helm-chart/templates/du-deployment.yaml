@@ -23,3 +23,7 @@ spec:
           env:
             - name: CU_URL
               value: "http://cu-service:8001"
+            - name: PIPELINE_RUN_ID
+              value: "{{ .Values.pipeline.runId }}"
+            - name: APP_VERSION
+              value: "{{ .Values.du.tag }}"

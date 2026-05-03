@@ -3,12 +3,18 @@ from pydantic import BaseModel
 import time
 import random
 import logging
+import os
 from fastapi import Response
 
 app = FastAPI()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
+
+# Runtime metadata injected by Kubernetes/Helm
+PIPELINE_RUN_ID = os.getenv("PIPELINE_RUN_ID", "manual")
+APP_VERSION = os.getenv("APP_VERSION", "unknown")
+METRIC_LABELS = f'app="cu",pipeline_run_id="{PIPELINE_RUN_ID}",app_version="{APP_VERSION}"'
 
 # KPI counters
 total_requests = 0
@@ -76,14 +82,15 @@ def metrics():
     exposed_min_attach_latency_ms = min_attach_latency_ms if min_attach_latency_ms is not None else 0.0
 
     metrics_data = f"""
-total_requests {total_requests}
-successful_attach {successful_attach}
-failed_attach {failed_attach}
-attach_sr_percent {round(sr, 2)}
-min_attach_latency_ms {exposed_min_attach_latency_ms}
-max_attach_latency_ms {max_attach_latency_ms}
-avg_attach_latency_ms {round(avg_attach_latency_ms, 2)}
-attach_latency_samples {attach_latency_samples}
+ran_sim_build_info{{{METRIC_LABELS}}} 1
+total_requests{{{METRIC_LABELS}}} {total_requests}
+successful_attach{{{METRIC_LABELS}}} {successful_attach}
+failed_attach{{{METRIC_LABELS}}} {failed_attach}
+attach_sr_percent{{{METRIC_LABELS}}} {round(sr, 2)}
+min_attach_latency_ms{{{METRIC_LABELS}}} {exposed_min_attach_latency_ms}
+max_attach_latency_ms{{{METRIC_LABELS}}} {max_attach_latency_ms}
+avg_attach_latency_ms{{{METRIC_LABELS}}} {round(avg_attach_latency_ms, 2)}
+attach_latency_samples{{{METRIC_LABELS}}} {attach_latency_samples}
 """
 
     return Response(content=metrics_data, media_type="text/plain")
@@ -97,6 +104,9 @@ def metrics_json():
     exposed_min_attach_latency_ms = min_attach_latency_ms if min_attach_latency_ms is not None else 0.0
 
     return {
+        "app": "cu",
+        "pipeline_run_id": PIPELINE_RUN_ID,
+        "app_version": APP_VERSION,
         "total_requests": total_requests,
         "successful_attach": successful_attach,
         "failed_attach": failed_attach,

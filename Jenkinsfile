@@ -183,7 +183,8 @@ pipeline {
                 cd helm-chart
                 helm upgrade --install ran-sim . \
                   --set cu.tag=${CU_IMAGE_TAG} \
-                  --set du.tag=${DU_IMAGE_TAG}
+                  --set du.tag=${DU_IMAGE_TAG} \
+                  --set pipeline.runId=${BUILD_NUMBER}
 
                 echo "Forcing fresh rollout after deployment..."
                 kubectl rollout restart deployment cu-deployment

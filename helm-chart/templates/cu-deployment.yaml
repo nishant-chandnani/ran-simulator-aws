@@ -20,3 +20,8 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8001
+          env:
+            - name: PIPELINE_RUN_ID
+              value: "{{ .Values.pipeline.runId }}"
+            - name: APP_VERSION
+              value: "{{ .Values.cu.tag }}"
