@@ -127,7 +127,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(rach_sr_percent{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "100 * sum(successful_rach{app=\"du\", pipeline_run_id=\"$run_id\"}) / sum(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"})",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -838,7 +838,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(attach_sr_percent{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "100 * sum(successful_attach{app=\"cu\", pipeline_run_id=\"$run_id\"}) / sum(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"})",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -1324,8 +1324,8 @@
       "spec": {
         "allowCustomValue": true,
         "current": {
-          "text": "10",
-          "value": "10"
+          "text": "11",
+          "value": "11"
         },
         "definition": "label_values(ran_sim_build_info,pipeline_run_id)",
         "hide": "dontHide",
