@@ -11,6 +11,8 @@ pipeline {
         VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
         KUBECONFIG_PATH = "/var/lib/jenkins/.kube/config"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
+        LOAD_TEST_ROUNDS = "30"
+        REQUESTS_PER_ROUND = "100"
     }
 
     stages {
@@ -253,16 +255,16 @@ pipeline {
 
                 sleep 2
 
-                echo "Starting load test (10 rounds x 30 requests)..."
+                echo "Starting load test (${LOAD_TEST_ROUNDS} rounds x ${REQUESTS_PER_ROUND} requests)..."
 
                 TOTAL_REQUESTS=0
 
-                for round in $(seq 1 10); do
+                for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
                   echo "\n===== ROUND $round ====="
 
                   CURL_PIDS=""
 
-                  for i in $(seq 1 30); do
+                  for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
                     curl -s --connect-timeout 3 --max-time 10 -X POST http://localhost:18000/attach \
                     -H "Content-Type: application/json" \
                     -d '{"ue_id":"UE'"$round""$i"'"}' &
@@ -276,7 +278,7 @@ pipeline {
                     }
                   done
 
-                  TOTAL_REQUESTS=$((TOTAL_REQUESTS + 30))
+                  TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
                   sleep 1
                 done
 
