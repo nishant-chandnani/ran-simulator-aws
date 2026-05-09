@@ -223,7 +223,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"})",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -318,7 +318,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(failed_rach{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(failed_rach{app=\"du\", pipeline_run_id=\"$run_id\"})",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -934,7 +934,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"})",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -1029,7 +1029,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(failed_attach{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(failed_attach{app=\"cu\", pipeline_run_id=\"$run_id\"})",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -1324,8 +1324,8 @@
       "spec": {
         "allowCustomValue": true,
         "current": {
-          "text": "6",
-          "value": "6"
+          "text": "10",
+          "value": "10"
         },
         "definition": "label_values(ran_sim_build_info,pipeline_run_id)",
         "hide": "dontHide",
