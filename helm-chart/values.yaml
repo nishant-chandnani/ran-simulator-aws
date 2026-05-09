@@ -1,10 +1,30 @@
 cu:
   repository: 276594885557.dkr.ecr.ap-southeast-2.amazonaws.com/ran-simulator-cu
   tag: latest
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
 
 du:
   repository: 276594885557.dkr.ecr.ap-southeast-2.amazonaws.com/ran-simulator-du
   tag: latest
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
 
 pipeline:
   runId: manual
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 60

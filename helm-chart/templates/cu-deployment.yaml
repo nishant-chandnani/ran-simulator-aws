@@ -4,6 +4,7 @@ metadata:
   name: cu-deployment
 spec:
   replicas: 1
+  revisionHistoryLimit: 1
   selector:
     matchLabels:
       app: cu
@@ -25,3 +26,5 @@ spec:
               value: "{{ .Values.pipeline.runId }}"
             - name: APP_VERSION
               value: "{{ .Values.cu.tag }}"
+          resources:
+            {{- toYaml .Values.cu.resources | nindent 12 }}

@@ -4,6 +4,7 @@ metadata:
   name: du-deployment
 spec:
   replicas: 1
+  revisionHistoryLimit: 1
   selector:
     matchLabels:
       app: du
@@ -27,3 +28,5 @@ spec:
               value: "{{ .Values.pipeline.runId }}"
             - name: APP_VERSION
               value: "{{ .Values.du.tag }}"
+          resources:
+            {{- toYaml .Values.du.resources | nindent 12 }}
