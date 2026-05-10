@@ -256,6 +256,7 @@ pipeline {
 
                   CURL_PIDS=""
 
+                  set +x
                   for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
                     (
                       curl -s --connect-timeout 3 --max-time 10 -X POST http://localhost:18000/attach \
@@ -267,10 +268,12 @@ pipeline {
 
                   for pid in $CURL_PIDS; do
                     wait $pid || {
+                      set -x
                       echo "One or more attach requests failed or timed out"
                       exit 1
                     }
                   done
+                  set -x
 
                   TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
                   sleep 1
