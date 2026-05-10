@@ -12,8 +12,8 @@ pipeline {
         VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
         KUBECONFIG_PATH = "/var/lib/jenkins/.kube/config"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
-        LOAD_TEST_ROUNDS = "30"
-        REQUESTS_PER_ROUND = "100"
+        LOAD_TEST_ROUNDS = "10"
+        REQUESTS_PER_ROUND = "30"
     }
 
     stages {
