@@ -252,14 +252,16 @@ pipeline {
                 TOTAL_REQUESTS=0
 
                 for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
-                  echo "\n===== ROUND $round ====="
+                  echo "Running round $round/$LOAD_TEST_ROUNDS with $REQUESTS_PER_ROUND parallel requests..."
 
                   CURL_PIDS=""
 
                   for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
-                    curl -s --connect-timeout 3 --max-time 10 -X POST http://localhost:18000/attach \
-                      -H "Content-Type: application/json" \
-                      -d '{"ue_id":"UE'"$round""$i"'"}' &
+                    (
+                      curl -s --connect-timeout 3 --max-time 10 -X POST http://localhost:18000/attach \
+                        -H "Content-Type: application/json" \
+                        -d '{"ue_id":"UE'"$round""$i"'"}' > /dev/null
+                    ) &
                     CURL_PIDS="$CURL_PIDS $!"
                   done
 
@@ -274,7 +276,7 @@ pipeline {
                   sleep 1
                 done
 
-                echo "\nTotal requests sent: $TOTAL_REQUESTS"
+                echo "Total requests sent: $TOTAL_REQUESTS"
                 echo "Load test completed"
                 '''
             }
@@ -283,7 +285,7 @@ pipeline {
         stage('Metrics Validation') {
             steps {
                 sh '''
-                echo "\n===== KPI VALIDATION ====="
+                echo "Starting KPI validation using Prometheus as the source of truth..."
 
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
@@ -310,7 +312,7 @@ pipeline {
 
                 sleep 5
 
-                echo "Waiting for Prometheus to scrape latest CU/DU metrics..."
+                echo "Waiting for Prometheus scrape interval to capture latest CU/DU metrics..."
                 sleep 35
 
                 query_prometheus() {
@@ -338,10 +340,8 @@ pipeline {
                 RACH_SR_QUERY='100 * sum(successful_rach{app="du", pipeline_run_id="'"$BUILD_NUMBER"'"}) / sum(total_rach_attempts{app="du", pipeline_run_id="'"$BUILD_NUMBER"'"})'
                 ATTACH_SR_QUERY='100 * sum(successful_attach{app="cu", pipeline_run_id="'"$BUILD_NUMBER"'"}) / sum(total_requests{app="cu", pipeline_run_id="'"$BUILD_NUMBER"'"})'
 
-                echo "\nPromQL - RACH SR:"
-                echo "$RACH_SR_QUERY"
-                echo "\nPromQL - ATTACH SR:"
-                echo "$ATTACH_SR_QUERY"
+                echo "PromQL query for RACH SR: $RACH_SR_QUERY"
+                echo "PromQL query for Attach SR: $ATTACH_SR_QUERY"
 
                 RACH_SR=$(query_prometheus "$RACH_SR_QUERY" "RACH SR")
                 ATTACH_SR=$(query_prometheus "$ATTACH_SR_QUERY" "ATTACH SR")
@@ -349,9 +349,9 @@ pipeline {
                 echo "$RACH_SR" | jq -e 'tonumber | numbers' > /dev/null 2>&1 || { echo "Invalid RACH SR value: $RACH_SR"; exit 1; }
                 echo "$ATTACH_SR" | jq -e 'tonumber | numbers' > /dev/null 2>&1 || { echo "Invalid ATTACH SR value: $ATTACH_SR"; exit 1; }
 
-                echo "\n===== KPI RESULTS ====="
-                printf "RACH SR   : %.2f\n" "$RACH_SR"
-                printf "ATTACH SR : %.2f\n" "$ATTACH_SR"
+                echo "KPI results from Prometheus:"
+                printf "RACH SR   : %.2f%%\n" "$RACH_SR"
+                printf "ATTACH SR : %.2f%%\n" "$ATTACH_SR"
 
                 RACH_THRESHOLD=75
                 ATTACH_THRESHOLD=80
@@ -362,7 +362,7 @@ pipeline {
                 if [ -z "$RACH_CHECK" ]; then RACH_CHECK=1; fi
                 if [ -z "$ATTACH_CHECK" ]; then ATTACH_CHECK=1; fi
 
-                echo "\n===== KPI DECISION ====="
+                echo "KPI threshold decision:"
 
                 if (( RACH_CHECK )); then
                   echo "❌ RACH SR BELOW threshold ($RACH_SR < $RACH_THRESHOLD)"
@@ -377,11 +377,11 @@ pipeline {
                 fi
 
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
-                  echo "\n❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD, ATTACH threshold: $ATTACH_THRESHOLD)"
+                  echo "❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
                   exit 1
                 fi
 
-                echo "\n✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD, ATTACH threshold: $ATTACH_THRESHOLD)"
+                echo "✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
                 '''
             }
         }
