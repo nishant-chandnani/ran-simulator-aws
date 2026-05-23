@@ -54,6 +54,41 @@ pipeline {
             }
         }
 
+        stage('Install Observability Stack') {
+            steps {
+                sh '''
+                export KUBECONFIG="$KUBECONFIG_PATH"
+
+                echo "Adding Prometheus Community Helm repository..."
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+                helm repo update
+
+                echo "Installing/Updating kube-prometheus-stack with Prometheus and Grafana..."
+                helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+                  --namespace monitoring \
+                  --create-namespace \
+                  --set alertmanager.enabled=false \
+                  --set prometheus.prometheusSpec.retention=2h \
+                  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+                  --set prometheus.prometheusSpec.serviceMonitorNamespaceSelectorNilUsesHelmValues=false \
+                  --set grafana.enabled=true \
+                  --set grafana.service.type=ClusterIP
+
+                echo "Waiting for Prometheus Operator rollout..."
+                kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
+
+                echo "Waiting for Grafana rollout..."
+                kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
+
+                echo "Waiting for Prometheus StatefulSet rollout..."
+                kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
+
+                echo "Validating observability services..."
+                kubectl get svc -n monitoring
+                '''
+            }
+        }
+
         stage('Decide Image Strategy') {
             steps {
                 script {
