@@ -11,12 +11,48 @@ pipeline {
         ECR_REGISTRY = "276594885557.dkr.ecr.ap-southeast-2.amazonaws.com"
         VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
         KUBECONFIG_PATH = "/var/lib/jenkins/.kube/config"
+        EKS_CLUSTER_NAME = "ran-simulator-eks"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
         LOAD_TEST_ROUNDS = "10"
         REQUESTS_PER_ROUND = "30"
     }
 
     stages {
+
+        stage('Update EKS kubeconfig') {
+            steps {
+                sh '''
+                mkdir -p /var/lib/jenkins/.kube
+
+                aws eks update-kubeconfig \
+                  --region $AWS_REGION \
+                  --name $EKS_CLUSTER_NAME \
+                  --kubeconfig $KUBECONFIG_PATH
+
+                export KUBECONFIG="$KUBECONFIG_PATH"
+
+                echo "Validating EKS cluster connectivity..."
+                kubectl get nodes
+                '''
+            }
+        }
+
+        stage('Install Metrics Server') {
+            steps {
+                sh '''
+                export KUBECONFIG="$KUBECONFIG_PATH"
+
+                echo "Installing/Updating Metrics Server..."
+                kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+                echo "Waiting for Metrics Server deployment rollout..."
+                kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s
+
+                echo "Validating Metrics API availability..."
+                kubectl top nodes || true
+                '''
+            }
+        }
 
         stage('Decide Image Strategy') {
             steps {
