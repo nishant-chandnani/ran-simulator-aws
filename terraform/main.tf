@@ -87,6 +87,24 @@ resource "aws_iam_role_policy_attachment" "jenkins_ecr_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
 }
 
+resource "aws_iam_role_policy" "jenkins_eks_describe_cluster_policy" {
+  name = "jenkins-eks-describe-cluster-policy"
+  role = aws_iam_role.jenkins_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster"
+        ]
+        Resource = "arn:aws:eks:ap-southeast-2:276594885557:cluster/ran-simulator-eks"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "jenkins_profile" {
   name = "jenkins-instance-profile"
   role = aws_iam_role.jenkins_role.name
@@ -115,6 +133,9 @@ resource "aws_instance" "jenkins_server" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes = [
+      ami
+    ]
   }
 }
 
