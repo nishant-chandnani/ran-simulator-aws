@@ -29,6 +29,9 @@ hpa:
   maxReplicas: 3
   targetCPUUtilizationPercentage: 60
 
+serviceMonitor:
+  enabled: true
+
 probes:
   readiness:
     initialDelaySeconds: 5
