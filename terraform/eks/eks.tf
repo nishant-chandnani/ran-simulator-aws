@@ -40,6 +40,11 @@ resource "aws_eks_cluster" "eks_cluster" {
     endpoint_public_access  = true
   }
 
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   tags = {
     Name        = var.eks_cluster_name
     Environment = var.environment
@@ -118,5 +123,29 @@ resource "aws_eks_node_group" "eks_node_group" {
     aws_iam_role_policy_attachment.eks_worker_node_policy,
     aws_iam_role_policy_attachment.eks_cni_policy,
     aws_iam_role_policy_attachment.eks_ecr_read_only_policy
+  ]
+}
+
+resource "aws_eks_access_entry" "jenkins_access_entry" {
+  cluster_name  = aws_eks_cluster.eks_cluster.name
+  principal_arn = "arn:aws:iam::276594885557:role/jenkins-ecr-role"
+  type          = "STANDARD"
+
+  depends_on = [
+    aws_eks_cluster.eks_cluster
+  ]
+}
+
+resource "aws_eks_access_policy_association" "jenkins_admin_access" {
+  cluster_name  = aws_eks_cluster.eks_cluster.name
+  principal_arn = aws_eks_access_entry.jenkins_access_entry.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [
+    aws_eks_access_entry.jenkins_access_entry
   ]
 }
