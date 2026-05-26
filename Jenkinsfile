@@ -82,7 +82,10 @@ pipeline {
                   --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
                   --set prometheus.prometheusSpec.serviceMonitorNamespaceSelectorNilUsesHelmValues=false \
                   --set grafana.enabled=true \
-                  --set grafana.service.type=ClusterIP
+                  --set grafana.service.type=ClusterIP \
+                  --set grafana.sidecar.dashboards.enabled=true \
+                  --set grafana.sidecar.dashboards.label=grafana_dashboard \
+                  --set grafana.sidecar.dashboards.searchNamespace=monitoring
 
                 echo "Waiting for Prometheus Operator rollout..."
                 kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
@@ -95,6 +98,34 @@ pipeline {
 
                 echo "Validating observability services..."
                 kubectl get svc -n monitoring
+                '''
+            }
+        }
+
+        stage('Provision Grafana Dashboard') {
+            steps {
+                sh '''
+                export KUBECONFIG="$KUBECONFIG_PATH"
+
+                DASHBOARD_FILE="grafana/dashboards/ran-performance-dashboard.json"
+
+                if [ ! -f "$DASHBOARD_FILE" ]; then
+                  echo "Grafana dashboard file not found at $DASHBOARD_FILE"
+                  echo "Skipping dashboard provisioning for now."
+                  exit 0
+                fi
+
+                echo "Provisioning RAN Performance Grafana dashboard from Git..."
+
+                kubectl create configmap ran-performance-dashboard \
+                  -n monitoring \
+                  --from-file=ran-performance-dashboard.json="$DASHBOARD_FILE" \
+                  --dry-run=client -o yaml | \
+                  kubectl label --local -f - grafana_dashboard=1 -o yaml | \
+                  kubectl apply -f -
+
+                echo "Dashboard ConfigMap applied. Grafana sidecar should pick it up automatically."
+                kubectl get configmap ran-performance-dashboard -n monitoring --show-labels
                 '''
             }
         }
