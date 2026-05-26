@@ -42,7 +42,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(min_attach_latency_ms{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "min(\n  min_over_time(\n    (min_attach_latency_ms{app=\"cu\", pipeline_run_id=\"$run_id\"} > 0)[1h:]\n  )\n)",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -127,7 +127,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "100 * sum(successful_rach{app=\"du\", pipeline_run_id=\"$run_id\"}) / sum(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "100 *\nsum(max_over_time(successful_rach{app=\"du\", pipeline_run_id=\"$run_id\"}[1h]))\n/\nsum(max_over_time(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"}[1h]))",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -223,7 +223,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(max_over_time(total_rach_attempts{app=\"du\", pipeline_run_id=\"$run_id\"}[1h]))",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -318,7 +318,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(failed_rach{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(max_over_time(failed_rach{app=\"du\", pipeline_run_id=\"$run_id\"}[1h]))",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -413,7 +413,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(avg_attach_latency_ms{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(\n  max_over_time(\n    (avg_attach_latency_ms{app=\"cu\", pipeline_run_id=\"$run_id\"} * attach_latency_samples{app=\"cu\", pipeline_run_id=\"$run_id\"})[1h:]\n  )\n)\n/\nsum(\n  max_over_time(\n    attach_latency_samples{app=\"cu\", pipeline_run_id=\"$run_id\"}[1h]\n  )\n)",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -498,7 +498,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(max_attach_latency_ms{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "max(\n  max_over_time(\n    max_attach_latency_ms{app=\"cu\", pipeline_run_id=\"$run_id\"}[1h]\n  )\n)",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -583,7 +583,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(min_end_to_end_latency_ms{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "min(\n  min_over_time(\n    (min_end_to_end_latency_ms{app=\"du\", pipeline_run_id=\"$run_id\"} > 0)[1h:]\n  )\n)",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -668,7 +668,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(avg_end_to_end_latency_ms{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(\n  max_over_time(\n    (avg_end_to_end_latency_ms{app=\"du\", pipeline_run_id=\"$run_id\"} * end_to_end_latency_samples{app=\"du\", pipeline_run_id=\"$run_id\"})[1h:]\n  )\n)\n/\nsum(\n  max_over_time(\n    end_to_end_latency_samples{app=\"du\", pipeline_run_id=\"$run_id\"}[1h]\n  )\n)",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -753,7 +753,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "max(max_end_to_end_latency_ms{app=\"du\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "max(\n  max_over_time(\n    max_end_to_end_latency_ms{app=\"du\", pipeline_run_id=\"$run_id\"}[1h]\n  )\n)",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -838,7 +838,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "100 * sum(successful_attach{app=\"cu\", pipeline_run_id=\"$run_id\"}) / sum(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "100 *\nsum(max_over_time(successful_attach{app=\"cu\", pipeline_run_id=\"$run_id\"}[1h]))\n/\nsum(max_over_time(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"}[1h]))",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -934,7 +934,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(max_over_time(total_requests{app=\"cu\", pipeline_run_id=\"$run_id\"}[1h]))",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -1029,7 +1029,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum(failed_attach{app=\"cu\", pipeline_run_id=\"$run_id\"})",
+                      "expr": "sum(max_over_time(failed_attach{app=\"cu\", pipeline_run_id=\"$run_id\"}[1h]))",
                       "legendFormat": "__auto",
                       "range": true
                     },

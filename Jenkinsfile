@@ -59,11 +59,21 @@ pipeline {
                 sh '''
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
+                if helm status kube-prometheus-stack -n monitoring > /dev/null 2>&1; then
+                  echo "kube-prometheus-stack already exists. Skipping Helm upgrade to avoid unnecessary Grafana/Prometheus rollout."
+                  echo "Validating existing observability stack..."
+                  kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
+                  kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
+                  kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
+                  kubectl get svc -n monitoring
+                  exit 0
+                fi
+
                 echo "Adding Prometheus Community Helm repository..."
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
                 helm repo update
 
-                echo "Installing/Updating kube-prometheus-stack with Prometheus and Grafana..."
+                echo "Installing kube-prometheus-stack with Prometheus and Grafana..."
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --create-namespace \
