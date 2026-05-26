@@ -14,7 +14,7 @@ pipeline {
         EKS_CLUSTER_NAME = "ran-simulator-eks"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
         LOAD_TEST_ROUNDS = "10"
-        REQUESTS_PER_ROUND = "30"
+        REQUESTS_PER_ROUND = "300"
     }
 
     stages {
