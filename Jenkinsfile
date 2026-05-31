@@ -118,16 +118,6 @@ EOF
                 sh '''
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
-                if helm status kube-prometheus-stack -n monitoring > /dev/null 2>&1; then
-                  echo "kube-prometheus-stack already exists. Skipping Helm upgrade to avoid unnecessary Grafana/Prometheus rollout."
-                  echo "Validating existing observability stack..."
-                  kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
-                  kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
-                  kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
-                  kubectl get svc -n monitoring
-                  exit 0
-                fi
-
                 echo "Adding Prometheus Community Helm repository..."
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
                 helm repo update
@@ -357,10 +347,6 @@ EOF
                   --set du.tag=${DU_IMAGE_TAG} \
                   --set pipeline.runId=${BUILD_NUMBER}
 
-                echo "Forcing fresh rollout after deployment..."
-                kubectl rollout restart deployment cu-deployment
-                kubectl rollout restart deployment du-deployment
-
                 echo "Waiting for CU and DU deployments to become ready..."
                 kubectl rollout status deployment/cu-deployment --timeout=120s
                 kubectl rollout status deployment/du-deployment --timeout=120s
@@ -398,39 +384,74 @@ EOF
 
                 kubectl delete pod ran-load-test --ignore-not-found=true > /dev/null 2>&1 || true
 
+                cleanup() {
+                  kubectl delete pod ran-load-test --ignore-not-found=true > /dev/null 2>&1 || true
+                }
+                trap cleanup EXIT
+
+                echo "Creating temporary load-test pod..."
                 kubectl run ran-load-test \
-                  --rm -i \
                   --restart=Never \
                   --image=curlimages/curl:8.10.1 \
                   --env="LOAD_TEST_ROUNDS=$LOAD_TEST_ROUNDS" \
                   --env="REQUESTS_PER_ROUND=$REQUESTS_PER_ROUND" \
-                  --command -- sh -c '
-                    echo "Resetting metrics before load test..."
-                    curl -s -X POST http://du-service:8000/reset-metrics || true
-                    curl -s -X POST http://cu-service:8001/reset-metrics || true
+                  --command -- sleep 3600
 
-                    sleep 2
+                echo "Waiting for load-test pod to become ready..."
+                kubectl wait --for=condition=Ready pod/ran-load-test --timeout=120s
 
-                    echo "Starting load test (${LOAD_TEST_ROUNDS} rounds x ${REQUESTS_PER_ROUND} requests)..."
-                    TOTAL_REQUESTS=0
+                echo "Executing load-test script inside the pod..."
+                kubectl exec -i ran-load-test -- sh <<'LOADTEST'
+                set -eu
 
-                    for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
-                      echo "Running round $round/$LOAD_TEST_ROUNDS with $REQUESTS_PER_ROUND parallel requests..."
+                echo "Resetting metrics before load test..."
+                curl -s -X POST http://du-service:8000/reset-metrics
+                curl -s -X POST http://cu-service:8001/reset-metrics
 
-                      for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
-                        curl -s --connect-timeout 3 --max-time 10 -X POST http://du-service:8000/attach \
-                          -H "Content-Type: application/json" \
-                          -d "{\"ue_id\":\"UE-${round}-${i}\"}" > /dev/null &
-                      done
+                sleep 2
 
-                      wait
-                      TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
-                      sleep 1
-                    done
+                echo "Starting load test (${LOAD_TEST_ROUNDS} rounds x ${REQUESTS_PER_ROUND} requests)..."
+                TOTAL_REQUESTS=0
+                FAILED_REQUESTS=0
 
-                    echo "Total requests sent: $TOTAL_REQUESTS"
-                    echo "Load test completed"
-                  '
+                for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
+                  echo "Running round $round/$LOAD_TEST_ROUNDS with $REQUESTS_PER_ROUND parallel requests..."
+
+                  for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
+                    (
+                      curl -s --connect-timeout 3 --max-time 10 -X POST http://du-service:8000/attach \
+                        -H "Content-Type: application/json" \
+                        -d "{\"ue_id\":\"UE-${round}-${i}\"}" > /tmp/curl-${round}-${i}.out 2>/dev/null \
+                      || echo "FAILED" > /tmp/curl-${round}-${i}.out
+                    ) &
+                  done
+
+                  wait
+
+                  ROUND_FAILURES=$(grep -l "FAILED" /tmp/curl-${round}-*.out 2>/dev/null | wc -l | tr -d ' ')
+                  FAILED_REQUESTS=$((FAILED_REQUESTS + ROUND_FAILURES))
+                  TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
+
+                  rm -f /tmp/curl-${round}-*.out
+                  sleep 1
+                done
+
+                echo "Total requests attempted: $TOTAL_REQUESTS"
+                echo "Failed curl executions: $FAILED_REQUESTS"
+
+                echo "DU metrics after load test:"
+                curl -s http://du-service:8000/metrics
+
+                echo "CU metrics after load test:"
+                curl -s http://cu-service:8001/metrics
+
+                if [ "$FAILED_REQUESTS" -gt 0 ]; then
+                  echo "One or more curl executions failed during load test."
+                  exit 1
+                fi
+
+                echo "Load test completed"
+LOADTEST
                 '''
             }
         }
@@ -478,12 +499,12 @@ EOF
                     value=$(curl -sG "http://localhost:19090/api/v1/query" \
                       --data-urlencode "query=$promql" | jq -r '.data.result[0].value[1] // empty')
 
-                    if [ -n "$value" ]; then
+                    if [ -n "$value" ] && [ "$value" != "NaN" ] && [ "$value" != "+Inf" ] && [ "$value" != "-Inf" ]; then
                       echo "$value"
                       return 0
                     fi
 
-                    echo "No Prometheus data yet for $label. Retry $attempt/3..." >&2
+                    echo "No valid Prometheus data yet for $label. Current value: ${value:-empty}. Retry $attempt/3..." >&2
                     sleep 10
                   done
 
