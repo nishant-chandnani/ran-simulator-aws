@@ -402,55 +402,98 @@ EOF
 
                 echo "Executing load-test script inside the pod..."
                 kubectl exec -i ran-load-test -- sh <<'LOADTEST'
-                set -eu
+set -eu
 
-                echo "Resetting metrics before load test..."
-                curl -s -X POST http://du-service:8000/reset-metrics
-                curl -s -X POST http://cu-service:8001/reset-metrics
+printf '%s\n' "Resetting metrics before load test..."
+curl --fail-with-body -s -X POST http://du-service:8000/reset-metrics
+curl --fail-with-body -s -X POST http://cu-service:8001/reset-metrics
 
-                sleep 2
+sleep 2
 
-                echo "Starting load test (${LOAD_TEST_ROUNDS} rounds x ${REQUESTS_PER_ROUND} requests)..."
-                TOTAL_REQUESTS=0
-                FAILED_REQUESTS=0
+printf '%s\n' "Sanity-checking one attach request before load test..."
+SANITY_RESPONSE=$(curl --fail-with-body -s --connect-timeout 3 --max-time 10 \
+  -X POST http://du-service:8000/attach \
+  -H 'Content-Type: application/json' \
+  --data '{"ue_id":"UE-SANITY"}')
 
-                for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
-                  echo "Running round $round/$LOAD_TEST_ROUNDS with $REQUESTS_PER_ROUND parallel requests..."
+printf '%s\n' "$SANITY_RESPONSE"
 
-                  for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
-                    (
-                      curl -s --connect-timeout 3 --max-time 10 -X POST http://du-service:8000/attach \
-                        -H "Content-Type: application/json" \
-                        -d "{\"ue_id\":\"UE-${round}-${i}\"}" > /tmp/curl-${round}-${i}.out 2>/dev/null \
-                      || echo "FAILED" > /tmp/curl-${round}-${i}.out
-                    ) &
-                  done
+printf '%s\n' "Metrics after sanity attach:"
+curl -s http://du-service:8000/metrics | grep -E 'total_rach_attempts|successful_rach|failed_rach|end_to_end_latency_samples' || true
+curl -s http://cu-service:8001/metrics | grep -E 'total_requests|successful_attach|failed_attach|attach_latency_samples' || true
 
-                  wait
+printf '%s\n' "Resetting metrics again before actual load test..."
+curl --fail-with-body -s -X POST http://du-service:8000/reset-metrics
+curl --fail-with-body -s -X POST http://cu-service:8001/reset-metrics
 
-                  ROUND_FAILURES=$(grep -l "FAILED" /tmp/curl-${round}-*.out 2>/dev/null | wc -l | tr -d ' ')
-                  FAILED_REQUESTS=$((FAILED_REQUESTS + ROUND_FAILURES))
-                  TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
+sleep 2
 
-                  rm -f /tmp/curl-${round}-*.out
-                  sleep 1
-                done
+printf '%s\n' "Starting load test (${LOAD_TEST_ROUNDS} rounds x ${REQUESTS_PER_ROUND} requests)..."
+TOTAL_REQUESTS=0
+FAILED_REQUESTS=0
 
-                echo "Total requests attempted: $TOTAL_REQUESTS"
-                echo "Failed curl executions: $FAILED_REQUESTS"
+for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
+  printf '%s\n' "Running round $round/$LOAD_TEST_ROUNDS with $REQUESTS_PER_ROUND parallel requests..."
 
-                echo "DU metrics after load test:"
-                curl -s http://du-service:8000/metrics
+  for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
+    (
+      UE_ID="UE-${round}-${i}"
+      PAYLOAD=$(printf '{"ue_id":"%s"}' "$UE_ID")
 
-                echo "CU metrics after load test:"
-                curl -s http://cu-service:8001/metrics
+      curl --fail-with-body -s --connect-timeout 3 --max-time 10 \
+        -X POST http://du-service:8000/attach \
+        -H 'Content-Type: application/json' \
+        --data "$PAYLOAD" > /tmp/curl-${round}-${i}.out 2>&1 \
+      || {
+        echo "FAILED" > /tmp/curl-${round}-${i}.status
+        printf '%s\n' "Request failed for $UE_ID" >> /tmp/curl-${round}-${i}.out
+      }
+    ) &
+  done
 
-                if [ "$FAILED_REQUESTS" -gt 0 ]; then
-                  echo "One or more curl executions failed during load test."
-                  exit 1
-                fi
+  wait
 
-                echo "Load test completed"
+  ROUND_FAILURES=$(ls /tmp/curl-${round}-*.status 2>/dev/null | wc -l | tr -d ' ')
+  FAILED_REQUESTS=$((FAILED_REQUESTS + ROUND_FAILURES))
+  TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
+
+  if [ "$ROUND_FAILURES" -gt 0 ]; then
+    printf '%s\n' "Round $round had $ROUND_FAILURES failed curl executions. Showing first few failures:"
+    cat /tmp/curl-${round}-*.out 2>/dev/null | head -20 || true
+  fi
+
+  rm -f /tmp/curl-${round}-*.out /tmp/curl-${round}-*.status
+  sleep 1
+done
+
+printf '%s\n' "Total requests attempted: $TOTAL_REQUESTS"
+printf '%s\n' "Failed curl executions: $FAILED_REQUESTS"
+
+printf '%s\n' "DU metrics after load test:"
+curl -s http://du-service:8000/metrics
+
+printf '%s\n' "CU metrics after load test:"
+curl -s http://cu-service:8001/metrics
+
+DU_TOTAL=$(curl -s http://du-service:8000/metrics | awk -F'} ' '/total_rach_attempts/ {print $2; exit}')
+CU_TOTAL=$(curl -s http://cu-service:8001/metrics | awk -F'} ' '/total_requests/ {print $2; exit}')
+
+if [ -z "$DU_TOTAL" ] || [ "$DU_TOTAL" = "0" ]; then
+  printf '%s\n' "DU total_rach_attempts did not increase. Load test did not produce valid DU traffic."
+  exit 1
+fi
+
+if [ -z "$CU_TOTAL" ] || [ "$CU_TOTAL" = "0" ]; then
+  printf '%s\n' "CU total_requests did not increase. Load test did not produce valid CU traffic."
+  exit 1
+fi
+
+if [ "$FAILED_REQUESTS" -gt 0 ]; then
+  printf '%s\n' "One or more curl executions failed during load test."
+  exit 1
+fi
+
+printf '%s\n' "Load test completed"
 LOADTEST
                 '''
             }
