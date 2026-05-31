@@ -88,14 +88,21 @@ pipeline {
                 helm repo update
 
                 echo "Installing AWS Load Balancer Controller..."
+                echo "Preparing AWS Load Balancer Controller Helm values..."
+                cat > /tmp/aws-load-balancer-controller-values.yaml <<EOF
+clusterName: $EKS_CLUSTER_NAME
+region: $AWS_REGION
+vpcId: $EKS_VPC_ID
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: $ALB_CONTROLLER_ROLE_ARN
+EOF
+
                 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
                   --namespace kube-system \
-                  --set clusterName="$EKS_CLUSTER_NAME" \
-                  --set region="$AWS_REGION" \
-                  --set vpcId="$EKS_VPC_ID" \
-                  --set serviceAccount.create=true \
-                  --set serviceAccount.name=aws-load-balancer-controller \
-                  --set-string 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn'="$ALB_CONTROLLER_ROLE_ARN"
+                  -f /tmp/aws-load-balancer-controller-values.yaml
 
                 echo "Waiting for AWS Load Balancer Controller rollout..."
                 kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
