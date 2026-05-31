@@ -14,8 +14,12 @@ pipeline {
         EKS_CLUSTER_NAME = "ran-simulator-eks"
         ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::276594885557:role/AmazonEKSLoadBalancerControllerRole"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
-        LOAD_TEST_ROUNDS = "10"
-        REQUESTS_PER_ROUND = "300"
+        LOAD_PHASE_1_ROUNDS = "5"
+        LOAD_PHASE_1_REQUESTS = "50"
+        LOAD_PHASE_2_ROUNDS = "5"
+        LOAD_PHASE_2_REQUESTS = "150"
+        LOAD_PHASE_3_ROUNDS = "10"
+        LOAD_PHASE_3_REQUESTS = "300"
         RACH_THRESHOLD = "75"
         ATTACH_THRESHOLD = "79.5"
     }
@@ -395,8 +399,12 @@ EOF
                 kubectl run ran-load-test \
                   --restart=Never \
                   --image=curlimages/curl:8.10.1 \
-                  --env="LOAD_TEST_ROUNDS=$LOAD_TEST_ROUNDS" \
-                  --env="REQUESTS_PER_ROUND=$REQUESTS_PER_ROUND" \
+                  --env="LOAD_PHASE_1_ROUNDS=$LOAD_PHASE_1_ROUNDS" \
+                  --env="LOAD_PHASE_1_REQUESTS=$LOAD_PHASE_1_REQUESTS" \
+                  --env="LOAD_PHASE_2_ROUNDS=$LOAD_PHASE_2_ROUNDS" \
+                  --env="LOAD_PHASE_2_REQUESTS=$LOAD_PHASE_2_REQUESTS" \
+                  --env="LOAD_PHASE_3_ROUNDS=$LOAD_PHASE_3_ROUNDS" \
+                  --env="LOAD_PHASE_3_REQUESTS=$LOAD_PHASE_3_REQUESTS" \
                   --command -- sleep 3600
 
                 echo "Waiting for load-test pod to become ready..."
@@ -430,43 +438,70 @@ curl --fail-with-body -s -X POST http://cu-service:8001/reset-metrics
 
 sleep 2
 
-printf '%s\n' "Starting load test (${LOAD_TEST_ROUNDS} rounds x ${REQUESTS_PER_ROUND} requests)..."
-TOTAL_REQUESTS=0
-FAILED_REQUESTS=0
+run_load_phase() {
+  PHASE_NAME="$1"
+  PHASE_ROUNDS="$2"
+  PHASE_REQUESTS="$3"
+  PHASE_COOLDOWN="$4"
 
-for round in $(seq 1 "$LOAD_TEST_ROUNDS"); do
-  printf '%s\n' "Running round $round/$LOAD_TEST_ROUNDS with $REQUESTS_PER_ROUND parallel requests..."
+  printf '%s\n' "Starting $PHASE_NAME: ${PHASE_ROUNDS} rounds x ${PHASE_REQUESTS} requests..."
+  printf '%s\n' "Replica snapshot before $PHASE_NAME:"
+  kubectl get hpa || true
+  kubectl get pods -l app=cu -o wide || true
+  kubectl get pods -l app=du -o wide || true
 
-  for i in $(seq 1 "$REQUESTS_PER_ROUND"); do
-    (
-      UE_ID="UE-${round}-${i}"
-      PAYLOAD=$(printf '{"ue_id":"%s"}' "$UE_ID")
+  for round in $(seq 1 "$PHASE_ROUNDS"); do
+    GLOBAL_ROUND=$((GLOBAL_ROUND + 1))
+    printf '%s\n' "Running $PHASE_NAME round $round/$PHASE_ROUNDS with $PHASE_REQUESTS parallel requests..."
 
-      curl --fail-with-body -s --connect-timeout 3 --max-time 10 \
-        -X POST http://du-service:8000/attach \
-        -H 'Content-Type: application/json' \
-        --data "$PAYLOAD" > /tmp/curl-${round}-${i}.out 2>&1 \
-      || {
-        echo "FAILED" > /tmp/curl-${round}-${i}.status
-        printf '%s\n' "Request failed for $UE_ID" >> /tmp/curl-${round}-${i}.out
-      }
-    ) &
+    for i in $(seq 1 "$PHASE_REQUESTS"); do
+      (
+        UE_ID="${PHASE_NAME}-UE-${round}-${i}"
+        PAYLOAD=$(printf '{"ue_id":"%s"}' "$UE_ID")
+
+        curl --fail-with-body -s --connect-timeout 3 --max-time 10 \
+          -X POST http://du-service:8000/attach \
+          -H 'Content-Type: application/json' \
+          --data "$PAYLOAD" > /tmp/curl-${GLOBAL_ROUND}-${i}.out 2>&1 \
+        || {
+          echo "FAILED" > /tmp/curl-${GLOBAL_ROUND}-${i}.status
+          printf '%s\n' "Request failed for $UE_ID" >> /tmp/curl-${GLOBAL_ROUND}-${i}.out
+        }
+      ) &
+    done
+
+    wait
+
+    ROUND_FAILURES=$(ls /tmp/curl-${GLOBAL_ROUND}-*.status 2>/dev/null | wc -l | tr -d ' ')
+    FAILED_REQUESTS=$((FAILED_REQUESTS + ROUND_FAILURES))
+    TOTAL_REQUESTS=$((TOTAL_REQUESTS + PHASE_REQUESTS))
+
+    if [ "$ROUND_FAILURES" -gt 0 ]; then
+      printf '%s\n' "$PHASE_NAME round $round had $ROUND_FAILURES failed curl executions. Showing first few failures:"
+      cat /tmp/curl-${GLOBAL_ROUND}-*.out 2>/dev/null | head -20 || true
+    fi
+
+    rm -f /tmp/curl-${GLOBAL_ROUND}-*.out /tmp/curl-${GLOBAL_ROUND}-*.status
+    sleep 2
   done
 
-  wait
+  printf '%s\n' "Replica snapshot after $PHASE_NAME:"
+  kubectl get hpa || true
+  kubectl get pods -l app=cu -o wide || true
+  kubectl get pods -l app=du -o wide || true
 
-  ROUND_FAILURES=$(ls /tmp/curl-${round}-*.status 2>/dev/null | wc -l | tr -d ' ')
-  FAILED_REQUESTS=$((FAILED_REQUESTS + ROUND_FAILURES))
-  TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS_PER_ROUND))
+  printf '%s\n' "Cooling down for ${PHASE_COOLDOWN}s after $PHASE_NAME to let HPA observe metrics..."
+  sleep "$PHASE_COOLDOWN"
+}
 
-  if [ "$ROUND_FAILURES" -gt 0 ]; then
-    printf '%s\n' "Round $round had $ROUND_FAILURES failed curl executions. Showing first few failures:"
-    cat /tmp/curl-${round}-*.out 2>/dev/null | head -20 || true
-  fi
+printf '%s\n' "Starting staged load test: low → medium → high pressure..."
+TOTAL_REQUESTS=0
+FAILED_REQUESTS=0
+GLOBAL_ROUND=0
 
-  rm -f /tmp/curl-${round}-*.out /tmp/curl-${round}-*.status
-  sleep 1
-done
+run_load_phase "phase1-low" "$LOAD_PHASE_1_ROUNDS" "$LOAD_PHASE_1_REQUESTS" 20
+run_load_phase "phase2-medium" "$LOAD_PHASE_2_ROUNDS" "$LOAD_PHASE_2_REQUESTS" 25
+run_load_phase "phase3-high" "$LOAD_PHASE_3_ROUNDS" "$LOAD_PHASE_3_REQUESTS" 30
 
 printf '%s\n' "Total requests attempted: $TOTAL_REQUESTS"
 printf '%s\n' "Failed curl executions: $FAILED_REQUESTS"
