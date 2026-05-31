@@ -1,3 +1,4 @@
+{{- if .Values.grafanaIngress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 
@@ -6,13 +7,13 @@ metadata:
   namespace: monitoring
 
   annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /login
-    alb.ingress.kubernetes.io/success-codes: "200,302"
+    alb.ingress.kubernetes.io/scheme: {{ .Values.grafanaIngress.scheme }}
+    alb.ingress.kubernetes.io/target-type: {{ .Values.grafanaIngress.targetType }}
+    alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.grafanaIngress.healthcheckPath }}
+    alb.ingress.kubernetes.io/success-codes: {{ .Values.grafanaIngress.successCodes | quote }}
 
 spec:
-  ingressClassName: alb
+  ingressClassName: {{ .Values.grafanaIngress.ingressClassName }}
 
   rules:
   - http:
@@ -25,3 +26,4 @@ spec:
             name: kube-prometheus-stack-grafana
             port:
               number: 80
+{{- end }}

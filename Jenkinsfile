@@ -12,6 +12,7 @@ pipeline {
         VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
         KUBECONFIG_PATH = "/var/lib/jenkins/.kube/config"
         EKS_CLUSTER_NAME = "ran-simulator-eks"
+        ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::276594885557:role/AmazonEKSLoadBalancerControllerRole"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
         LOAD_TEST_ROUNDS = "10"
         REQUESTS_PER_ROUND = "300"
@@ -50,6 +51,57 @@ pipeline {
 
                 echo "Validating Metrics API availability..."
                 kubectl top nodes || true
+                '''
+            }
+        }
+
+        stage('Install AWS Load Balancer Controller') {
+            steps {
+                sh '''
+                export KUBECONFIG="$KUBECONFIG_PATH"
+
+                echo "Checking whether AWS Load Balancer Controller is already installed..."
+
+                if helm status aws-load-balancer-controller -n kube-system > /dev/null 2>&1; then
+                  echo "AWS Load Balancer Controller already exists. Skipping Helm install."
+                  kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+                  kubectl get deployment aws-load-balancer-controller -n kube-system
+                  exit 0
+                fi
+
+                echo "Discovering EKS VPC ID dynamically..."
+                EKS_VPC_ID=$(aws eks describe-cluster \
+                  --region "$AWS_REGION" \
+                  --name "$EKS_CLUSTER_NAME" \
+                  --query "cluster.resourcesVpcConfig.vpcId" \
+                  --output text)
+
+                if [ -z "$EKS_VPC_ID" ] || [ "$EKS_VPC_ID" = "None" ]; then
+                  echo "Unable to discover EKS VPC ID for cluster $EKS_CLUSTER_NAME"
+                  exit 1
+                fi
+
+                echo "Using EKS VPC ID: $EKS_VPC_ID"
+
+                echo "Adding AWS EKS Helm repository..."
+                helm repo add eks https://aws.github.io/eks-charts || true
+                helm repo update
+
+                echo "Installing AWS Load Balancer Controller..."
+                helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+                  --namespace kube-system \
+                  --set clusterName="$EKS_CLUSTER_NAME" \
+                  --set region="$AWS_REGION" \
+                  --set vpcId="$EKS_VPC_ID" \
+                  --set serviceAccount.create=true \
+                  --set serviceAccount.name=aws-load-balancer-controller \
+                  --set-string 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn'="$ALB_CONTROLLER_ROLE_ARN"
+
+                echo "Waiting for AWS Load Balancer Controller rollout..."
+                kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
+
+                echo "Validating AWS Load Balancer Controller pods..."
+                kubectl get pods -n kube-system | grep aws-load-balancer-controller
                 '''
             }
         }

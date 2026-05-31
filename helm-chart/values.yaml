@@ -32,6 +32,14 @@ hpa:
 serviceMonitor:
   enabled: true
 
+grafanaIngress:
+  enabled: true
+  ingressClassName: alb
+  scheme: internet-facing
+  targetType: ip
+  healthcheckPath: /login
+  successCodes: "200,302"
+
 probes:
   readiness:
     initialDelaySeconds: 5
