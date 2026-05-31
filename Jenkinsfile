@@ -445,10 +445,7 @@ run_load_phase() {
   PHASE_COOLDOWN="$4"
 
   printf '%s\n' "Starting $PHASE_NAME: ${PHASE_ROUNDS} rounds x ${PHASE_REQUESTS} requests..."
-  printf '%s\n' "Replica snapshot before $PHASE_NAME:"
-  kubectl get hpa || true
-  kubectl get pods -l app=cu -o wide || true
-  kubectl get pods -l app=du -o wide || true
+  printf '%s\n' "HPA/replica snapshots are collected outside the load-test pod because the curl image intentionally does not include kubectl."
 
   for round in $(seq 1 "$PHASE_ROUNDS"); do
     GLOBAL_ROUND=$((GLOBAL_ROUND + 1))
@@ -485,11 +482,7 @@ run_load_phase() {
     sleep 2
   done
 
-  printf '%s\n' "Replica snapshot after $PHASE_NAME:"
-  kubectl get hpa || true
-  kubectl get pods -l app=cu -o wide || true
-  kubectl get pods -l app=du -o wide || true
-
+  printf '%s\n' "Completed $PHASE_NAME."
   printf '%s\n' "Cooling down for ${PHASE_COOLDOWN}s after $PHASE_NAME to let HPA observe metrics..."
   sleep "$PHASE_COOLDOWN"
 }
