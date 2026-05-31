@@ -16,6 +16,8 @@ pipeline {
         ECR_REPOSITORY_PREFIX = "ran-simulator"
         LOAD_TEST_ROUNDS = "10"
         REQUESTS_PER_ROUND = "300"
+        RACH_THRESHOLD = "75"
+        ATTACH_THRESHOLD = "79.5"
     }
 
     stages {
@@ -568,11 +570,12 @@ LOADTEST
                 echo "$ATTACH_SR" | jq -e 'tonumber | numbers' > /dev/null 2>&1 || { echo "Invalid ATTACH SR value: $ATTACH_SR"; exit 1; }
 
                 echo "KPI results from Prometheus:"
+                echo "Configured thresholds: RACH=$RACH_THRESHOLD ATTACH=$ATTACH_THRESHOLD"
                 printf "RACH SR   : %.2f%%\n" "$RACH_SR"
                 printf "ATTACH SR : %.2f%%\n" "$ATTACH_SR"
 
-                RACH_THRESHOLD=75
-                ATTACH_THRESHOLD=79.5
+                RACH_THRESHOLD="$RACH_THRESHOLD"
+                ATTACH_THRESHOLD="$ATTACH_THRESHOLD"
 
                 RACH_CHECK=$(echo "$RACH_SR < $RACH_THRESHOLD" | bc -l 2>/dev/null)
                 ATTACH_CHECK=$(echo "$ATTACH_SR < $ATTACH_THRESHOLD" | bc -l 2>/dev/null)
