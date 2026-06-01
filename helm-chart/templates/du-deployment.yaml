@@ -12,6 +12,8 @@ spec:
     metadata:
       labels:
         app: du
+        pipeline_run_id: "{{ .Values.pipeline.runId }}"
+        app_version: "{{ .Values.du.tag }}"
     spec:
       imagePullSecrets:
         - name: ecr-secret
