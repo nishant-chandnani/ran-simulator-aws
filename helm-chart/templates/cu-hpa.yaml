@@ -3,6 +3,10 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: cu-hpa
+  labels:
+    app: cu
+    pipeline_run_id: "{{ .Values.pipeline.runId }}"
+    app_version: "{{ .Values.cu.tag }}"
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

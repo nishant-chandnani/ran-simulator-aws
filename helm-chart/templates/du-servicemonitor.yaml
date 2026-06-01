@@ -12,5 +12,6 @@ spec:
   endpoints:
     - port: metrics
       path: /metrics
-      interval: 15s
+      interval: 5s
+      scrapeTimeout: 4s
 {{- end }}
