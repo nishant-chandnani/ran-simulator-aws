@@ -496,34 +496,17 @@ run_load_phase "phase1-low" "$LOAD_PHASE_1_ROUNDS" "$LOAD_PHASE_1_REQUESTS" 20
 run_load_phase "phase2-medium" "$LOAD_PHASE_2_ROUNDS" "$LOAD_PHASE_2_REQUESTS" 25
 run_load_phase "phase3-high" "$LOAD_PHASE_3_ROUNDS" "$LOAD_PHASE_3_REQUESTS" 30
 
-printf '%s\n' "Total requests attempted: $TOTAL_REQUESTS"
+printf '%s\n' "Total requests attempted by load generator: $TOTAL_REQUESTS"
 printf '%s\n' "Failed curl executions: $FAILED_REQUESTS"
-
-printf '%s\n' "DU metrics after load test:"
-curl -s http://du-service:8000/metrics
-
-printf '%s\n' "CU metrics after load test:"
-curl -s http://cu-service:8001/metrics
-
-DU_TOTAL=$(curl -s http://du-service:8000/metrics | awk -F'} ' '/total_rach_attempts/ {print $2; exit}')
-CU_TOTAL=$(curl -s http://cu-service:8001/metrics | awk -F'} ' '/total_requests/ {print $2; exit}')
-
-if [ -z "$DU_TOTAL" ] || [ "$DU_TOTAL" = "0" ]; then
-  printf '%s\n' "DU total_rach_attempts did not increase. Load test did not produce valid DU traffic."
-  exit 1
-fi
-
-if [ -z "$CU_TOTAL" ] || [ "$CU_TOTAL" = "0" ]; then
-  printf '%s\n' "CU total_requests did not increase. Load test did not produce valid CU traffic."
-  exit 1
-fi
+printf '%s\n' "Skipping direct DU/CU /metrics reads here because service-level /metrics can hit only one backend pod after HPA scaling."
+printf '%s\n' "Aggregated KPI validation is performed in the next stage using Prometheus as the source of truth."
 
 if [ "$FAILED_REQUESTS" -gt 0 ]; then
   printf '%s\n' "One or more curl executions failed during load test."
   exit 1
 fi
 
-printf '%s\n' "Load test completed"
+printf '%s\n' "Load test traffic generation completed"
 LOADTEST
                 '''
             }
