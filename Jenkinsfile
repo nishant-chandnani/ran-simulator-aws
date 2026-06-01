@@ -142,7 +142,8 @@ EOF
                   --set grafana.service.type=ClusterIP \
                   --set grafana.sidecar.dashboards.enabled=true \
                   --set grafana.sidecar.dashboards.label=grafana_dashboard \
-                  --set grafana.sidecar.dashboards.searchNamespace=monitoring
+                  --set grafana.sidecar.dashboards.searchNamespace=monitoring \
+                  --set-string 'kube-state-metrics.metricLabelsAllowlist[0]=horizontalpodautoscalers=[app\,pipeline_run_id\,app_version]' 
 
                 echo "Waiting for Prometheus Operator rollout..."
                 kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
