@@ -382,6 +382,16 @@ EOF
             }
         }
 
+        stage('Capture AIOps Run Start') {
+            steps {
+                sh '''
+                mkdir -p reports
+                date +%s > reports/aiops_run_start_epoch.txt
+                echo "AIOps run start epoch: $(cat reports/aiops_run_start_epoch.txt)"
+                '''
+            }
+        }
+
         stage('Load Test') {
             steps {
                 sh '''
@@ -548,6 +558,10 @@ LOADTEST
                 echo "Waiting for Prometheus scrape interval to capture latest CU/DU metrics..."
                 sleep 35
 
+                mkdir -p reports
+                date +%s > reports/aiops_run_end_epoch.txt
+                echo "AIOps run end epoch: $(cat reports/aiops_run_end_epoch.txt)"
+
                 query_prometheus() {
                   local promql="$1"
                   local label="$2"
@@ -616,6 +630,11 @@ LOADTEST
                 fi
 
                 echo "✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
+
+                echo "AIOps analysis window captured:"
+                echo "RUN_ID=$BUILD_NUMBER"
+                echo "START_EPOCH=$(cat reports/aiops_run_start_epoch.txt)"
+                echo "END_EPOCH=$(cat reports/aiops_run_end_epoch.txt)"
                 '''
             }
         }
