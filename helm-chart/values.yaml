@@ -3,10 +3,10 @@ cu:
   tag: latest
   resources:
     requests:
-      cpu: "20m"
+      cpu: "500m"
       memory: "128Mi"
     limits:
-      cpu: "500m"
+      cpu: "1000m"
       memory: "256Mi"
 
 du:
@@ -14,10 +14,10 @@ du:
   tag: latest
   resources:
     requests:
-      cpu: "20m"
+      cpu: "1000m"
       memory: "128Mi"
     limits:
-      cpu: "500m"
+      cpu: "1500m"
       memory: "256Mi"
 
 pipeline:
