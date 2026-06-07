@@ -624,19 +624,36 @@ LOADTEST
                   echo "✅ ATTACH SR OK ($ATTACH_SR >= $ATTACH_THRESHOLD)"
                 fi
 
+                echo "AIOps analysis window captured:"
+                echo "RUN_ID=$BUILD_NUMBER"
+                echo "START_EPOCH=$(cat reports/aiops_run_start_epoch.txt)"
+                echo "END_EPOCH=$(cat reports/aiops_run_end_epoch.txt)"
+
+                echo "Generating AIOps run analysis report..."
+                python3 aiops/analyze_run.py \
+                  --run-id "$BUILD_NUMBER" \
+                  --start "$(cat reports/aiops_run_start_epoch.txt)" \
+                  --end "$(cat reports/aiops_run_end_epoch.txt)" \
+                  --output "reports/aiops_report_${BUILD_NUMBER}.txt"
+
+                echo "AIOps report generated successfully: reports/aiops_report_${BUILD_NUMBER}.txt"
+                echo "Printing AIOps report in Jenkins console:"
+                cat "reports/aiops_report_${BUILD_NUMBER}.txt"
+
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
                   echo "❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
                   exit 1
                 fi
 
                 echo "✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
-
-                echo "AIOps analysis window captured:"
-                echo "RUN_ID=$BUILD_NUMBER"
-                echo "START_EPOCH=$(cat reports/aiops_run_start_epoch.txt)"
-                echo "END_EPOCH=$(cat reports/aiops_run_end_epoch.txt)"
                 '''
             }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'reports/*.txt', allowEmptyArchive: true
         }
     }
 }
