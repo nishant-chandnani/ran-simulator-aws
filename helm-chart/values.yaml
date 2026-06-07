@@ -3,7 +3,7 @@ cu:
   tag: latest
   resources:
     requests:
-      cpu: "500m"
+      cpu: "100m"
       memory: "128Mi"
     limits:
       cpu: "1000m"
@@ -14,7 +14,7 @@ du:
   tag: latest
   resources:
     requests:
-      cpu: "1000m"
+      cpu: "100m"
       memory: "128Mi"
     limits:
       cpu: "1500m"
@@ -26,7 +26,7 @@ pipeline:
 hpa:
   enabled: true
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 1
   targetCPUUtilizationPercentage: 60
 
 serviceMonitor:
