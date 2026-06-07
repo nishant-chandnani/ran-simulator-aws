@@ -133,7 +133,7 @@ EOF
                   --namespace monitoring \
                   --create-namespace \
                   --set alertmanager.enabled=false \
-                  --set prometheus.prometheusSpec.retention=2h \
+                  --set prometheus.prometheusSpec.retention=24h \
                   --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
                   --set prometheus.prometheusSpec.serviceMonitorNamespaceSelectorNilUsesHelmValues=false \
                   --set grafana.enabled=true \

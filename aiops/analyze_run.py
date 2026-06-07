@@ -27,9 +27,9 @@ from typing import Optional
 
 PROMETHEUS_DEFAULT_URL = "http://localhost:19090"
 
-HPA_TARGET_CPU_PERCENT = 60.0
-HPA_MIN_REPLICAS = 1
-HPA_MAX_REPLICAS = 3
+DEFAULT_HPA_TARGET_CPU_PERCENT = 60.0
+DEFAULT_HPA_MIN_REPLICAS = 1.0
+DEFAULT_HPA_MAX_REPLICAS = 3.0
 RACH_SR_THRESHOLD = 75.0
 ATTACH_SR_THRESHOLD = 79.5
 
@@ -86,6 +86,11 @@ def fmt_int(value: Optional[float]) -> str:
     return str(int(round(value)))
 
 
+def value_or_default(value: Optional[float], default: float) -> float:
+    """Use a live Prometheus value when available, otherwise fall back to a safe default."""
+    return value if value is not None else default
+
+
 def safe_percent(numerator: Optional[float], denominator: Optional[float]) -> Optional[float]:
     """Safely calculate percentage."""
     if numerator is None or denominator is None or denominator == 0:
@@ -93,43 +98,62 @@ def safe_percent(numerator: Optional[float], denominator: Optional[float]) -> Op
     return numerator / denominator * 100
 
 
-def evaluate_hpa_behavior(component: str, peak_cpu_util: Optional[float], max_replicas: Optional[float]) -> tuple[bool, str]:
+def evaluate_hpa_behavior(
+    component: str,
+    peak_cpu_util: Optional[float],
+    observed_max_replicas: Optional[float],
+    hpa_target_cpu: Optional[float],
+    hpa_min_replicas: Optional[float],
+    hpa_max_replicas: Optional[float],
+) -> tuple[bool, str]:
     """
-    Evaluate whether HPA behavior matched observed CPU pressure.
-
-    This is smarter than saying "replicas > 1 is always good".
+    Evaluate whether HPA behavior matched observed CPU pressure and live HPA configuration.
 
     Expected behavior:
-    - If CPU crosses the HPA target, HPA should scale above min replicas.
-    - If CPU stays below the HPA target, staying at min replicas is healthy.
+    - If CPU crosses the HPA target and HPA maxReplicas allows scaling, replicas should rise above minReplicas.
+    - If CPU stays below the HPA target, staying at minReplicas is healthy.
+    - If CPU crosses the target but maxReplicas equals minReplicas, no scaling is possible by design.
     """
-    if peak_cpu_util is None or max_replicas is None:
+    if peak_cpu_util is None or observed_max_replicas is None:
         return False, f"{component}: insufficient data to evaluate HPA behavior"
 
-    scaled = max_replicas > HPA_MIN_REPLICAS
-    cpu_crossed_target = peak_cpu_util >= HPA_TARGET_CPU_PERCENT
+    target = value_or_default(hpa_target_cpu, DEFAULT_HPA_TARGET_CPU_PERCENT)
+    min_replicas = value_or_default(hpa_min_replicas, DEFAULT_HPA_MIN_REPLICAS)
+    max_replicas = value_or_default(hpa_max_replicas, DEFAULT_HPA_MAX_REPLICAS)
+
+    scaled = observed_max_replicas > min_replicas
+    cpu_crossed_target = peak_cpu_util >= target
+    scaling_allowed = max_replicas > min_replicas
 
     if cpu_crossed_target and scaled:
         return True, (
             f"{component}: PASS - CPU crossed HPA target "
-            f"({peak_cpu_util:.2f}% >= {HPA_TARGET_CPU_PERCENT:.1f}%) and workload scaled to {fmt_int(max_replicas)} replicas"
+            f"({peak_cpu_util:.2f}% >= {target:.1f}%) and workload scaled to {fmt_int(observed_max_replicas)} replicas"
         )
 
     if not cpu_crossed_target and not scaled:
         return True, (
             f"{component}: PASS - CPU stayed below HPA target "
-            f"({peak_cpu_util:.2f}% < {HPA_TARGET_CPU_PERCENT:.1f}%) and workload correctly remained at {fmt_int(max_replicas)} replica"
+            f"({peak_cpu_util:.2f}% < {target:.1f}%) and workload correctly remained at {fmt_int(observed_max_replicas)} replica"
+        )
+
+    if cpu_crossed_target and not scaled and not scaling_allowed:
+        return True, (
+            f"{component}: PASS - CPU crossed HPA target "
+            f"({peak_cpu_util:.2f}% >= {target:.1f}%), but HPA maxReplicas={fmt_int(max_replicas)} "
+            f"equals minReplicas={fmt_int(min_replicas)}, so no scaling was possible by design"
         )
 
     if cpu_crossed_target and not scaled:
         return False, (
             f"{component}: FAIL - CPU crossed HPA target "
-            f"({peak_cpu_util:.2f}% >= {HPA_TARGET_CPU_PERCENT:.1f}%) but workload did not scale beyond {fmt_int(max_replicas)} replica"
+            f"({peak_cpu_util:.2f}% >= {target:.1f}%) but workload did not scale beyond {fmt_int(observed_max_replicas)} replica "
+            f"even though HPA maxReplicas={fmt_int(max_replicas)} allowed scaling"
         )
 
     return False, (
         f"{component}: WARN - CPU stayed below HPA target "
-        f"({peak_cpu_util:.2f}% < {HPA_TARGET_CPU_PERCENT:.1f}%) but workload still scaled to {fmt_int(max_replicas)} replicas"
+        f"({peak_cpu_util:.2f}% < {target:.1f}%) but workload still scaled to {fmt_int(observed_max_replicas)} replicas"
     )
 
 
@@ -137,10 +161,18 @@ def evaluate_hpa_behavior(component: str, peak_cpu_util: Optional[float], max_re
 # Scaling pattern classification and interpretation functions
 # ---------------------------------------------------------------------
 
-def classify_scaling_pattern(du_max_replicas: Optional[float], cu_max_replicas: Optional[float]) -> str:
+def classify_scaling_pattern(
+    du_max_replicas: Optional[float],
+    cu_max_replicas: Optional[float],
+    du_min_replicas: Optional[float],
+    cu_min_replicas: Optional[float],
+) -> str:
     """Classify which part of the simulated RAN workload scaled during the run."""
-    du_scaled = du_max_replicas is not None and du_max_replicas > HPA_MIN_REPLICAS
-    cu_scaled = cu_max_replicas is not None and cu_max_replicas > HPA_MIN_REPLICAS
+    du_min = value_or_default(du_min_replicas, DEFAULT_HPA_MIN_REPLICAS)
+    cu_min = value_or_default(cu_min_replicas, DEFAULT_HPA_MIN_REPLICAS)
+
+    du_scaled = du_max_replicas is not None and du_max_replicas > du_min
+    cu_scaled = cu_max_replicas is not None and cu_max_replicas > cu_min
 
     if du_scaled and cu_scaled:
         return "DU and CU scaled"
@@ -169,7 +201,7 @@ def build_scaling_interpretation(
 
     if scaling_pattern == "No scaling":
         lines.append(
-            "Scaling pattern: No scaling was observed. This is healthy when CPU utilization remains below the HPA target."
+            "Scaling pattern: No scaling was observed. This can be healthy when CPU stays below target, or expected when HPA maxReplicas equals minReplicas for a controlled single-replica experiment."
         )
     elif scaling_pattern == "DU-only scaling":
         lines.append(
@@ -270,6 +302,37 @@ def build_report(args: argparse.Namespace) -> str:
     du_max_replicas = q(f'max(max_over_time(({du_hpa_series})[{range_window}:]))')
     cu_max_replicas = q(f'max(max_over_time(({cu_hpa_series})[{range_window}:]))')
 
+    du_hpa_min_replicas = q(
+        f'max(max_over_time((kube_horizontalpodautoscaler_spec_min_replicas{{namespace="default",horizontalpodautoscaler="du-hpa"}} '
+        f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
+        f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="du-hpa",label_pipeline_run_id="{run_id}"}})[{range_window}:]))'
+    )
+    cu_hpa_min_replicas = q(
+        f'max(max_over_time((kube_horizontalpodautoscaler_spec_min_replicas{{namespace="default",horizontalpodautoscaler="cu-hpa"}} '
+        f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
+        f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="cu-hpa",label_pipeline_run_id="{run_id}"}})[{range_window}:]))'
+    )
+    du_hpa_max_replicas = q(
+        f'max(max_over_time((kube_horizontalpodautoscaler_spec_max_replicas{{namespace="default",horizontalpodautoscaler="du-hpa"}} '
+        f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
+        f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="du-hpa",label_pipeline_run_id="{run_id}"}})[{range_window}:]))'
+    )
+    cu_hpa_max_replicas = q(
+        f'max(max_over_time((kube_horizontalpodautoscaler_spec_max_replicas{{namespace="default",horizontalpodautoscaler="cu-hpa"}} '
+        f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
+        f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="cu-hpa",label_pipeline_run_id="{run_id}"}})[{range_window}:]))'
+    )
+    du_hpa_target_cpu = q(
+        f'max(max_over_time((kube_horizontalpodautoscaler_spec_target_metric{{namespace="default",horizontalpodautoscaler="du-hpa",metric_name="cpu",metric_target_type="utilization"}} '
+        f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
+        f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="du-hpa",label_pipeline_run_id="{run_id}"}})[{range_window}:]))'
+    )
+    cu_hpa_target_cpu = q(
+        f'max(max_over_time((kube_horizontalpodautoscaler_spec_target_metric{{namespace="default",horizontalpodautoscaler="cu-hpa",metric_name="cpu",metric_target_type="utilization"}} '
+        f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
+        f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="cu-hpa",label_pipeline_run_id="{run_id}"}})[{range_window}:]))'
+    )
+
     # ---------------------------------------------------------------------
     # CPU metrics: same PromQL design as Grafana CPU panels.
     # ---------------------------------------------------------------------
@@ -313,10 +376,29 @@ def build_report(args: argparse.Namespace) -> str:
     pass_rach = du_sr is not None and du_sr >= RACH_SR_THRESHOLD
     pass_attach = cu_sr is not None and cu_sr >= ATTACH_SR_THRESHOLD
 
-    pass_du_hpa, du_hpa_message = evaluate_hpa_behavior("DU", du_peak_cpu_util, du_max_replicas)
-    pass_cu_hpa, cu_hpa_message = evaluate_hpa_behavior("CU", cu_peak_cpu_util, cu_max_replicas)
+    pass_du_hpa, du_hpa_message = evaluate_hpa_behavior(
+        "DU",
+        du_peak_cpu_util,
+        du_max_replicas,
+        du_hpa_target_cpu,
+        du_hpa_min_replicas,
+        du_hpa_max_replicas,
+    )
+    pass_cu_hpa, cu_hpa_message = evaluate_hpa_behavior(
+        "CU",
+        cu_peak_cpu_util,
+        cu_max_replicas,
+        cu_hpa_target_cpu,
+        cu_hpa_min_replicas,
+        cu_hpa_max_replicas,
+    )
     pass_scaling = pass_du_hpa and pass_cu_hpa
-    scaling_pattern = classify_scaling_pattern(du_max_replicas, cu_max_replicas)
+    scaling_pattern = classify_scaling_pattern(
+        du_max_replicas,
+        cu_max_replicas,
+        du_hpa_min_replicas,
+        cu_hpa_min_replicas,
+    )
     scaling_interpretation = build_scaling_interpretation(
         scaling_pattern,
         du_peak_cpu_util,
@@ -335,9 +417,12 @@ def build_report(args: argparse.Namespace) -> str:
         "",
         "Scaling Configuration",
         "-" * 72,
-        f"HPA target CPU         : {fmt_number(HPA_TARGET_CPU_PERCENT)}%",
-        f"HPA min replicas       : {HPA_MIN_REPLICAS}",
-        f"HPA max replicas       : {HPA_MAX_REPLICAS}",
+        f"DU HPA target CPU      : {fmt_number(value_or_default(du_hpa_target_cpu, DEFAULT_HPA_TARGET_CPU_PERCENT))}%",
+        f"DU HPA min replicas    : {fmt_int(value_or_default(du_hpa_min_replicas, DEFAULT_HPA_MIN_REPLICAS))}",
+        f"DU HPA max replicas    : {fmt_int(value_or_default(du_hpa_max_replicas, DEFAULT_HPA_MAX_REPLICAS))}",
+        f"CU HPA target CPU      : {fmt_number(value_or_default(cu_hpa_target_cpu, DEFAULT_HPA_TARGET_CPU_PERCENT))}%",
+        f"CU HPA min replicas    : {fmt_int(value_or_default(cu_hpa_min_replicas, DEFAULT_HPA_MIN_REPLICAS))}",
+        f"CU HPA max replicas    : {fmt_int(value_or_default(cu_hpa_max_replicas, DEFAULT_HPA_MAX_REPLICAS))}",
         "",
         "DU / RACH Summary",
         "-" * 72,
