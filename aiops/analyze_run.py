@@ -27,6 +27,12 @@ from typing import Optional
 
 PROMETHEUS_DEFAULT_URL = "http://localhost:19090"
 
+HPA_TARGET_CPU_PERCENT = 60.0
+HPA_MIN_REPLICAS = 1
+HPA_MAX_REPLICAS = 3
+RACH_SR_THRESHOLD = 75.0
+ATTACH_SR_THRESHOLD = 79.5
+
 
 def parse_args() -> argparse.Namespace:
     """Read command-line inputs passed to the script."""
@@ -85,6 +91,46 @@ def safe_percent(numerator: Optional[float], denominator: Optional[float]) -> Op
     if numerator is None or denominator is None or denominator == 0:
         return None
     return numerator / denominator * 100
+
+
+def evaluate_hpa_behavior(component: str, peak_cpu_util: Optional[float], max_replicas: Optional[float]) -> tuple[bool, str]:
+    """
+    Evaluate whether HPA behavior matched observed CPU pressure.
+
+    This is smarter than saying "replicas > 1 is always good".
+
+    Expected behavior:
+    - If CPU crosses the HPA target, HPA should scale above min replicas.
+    - If CPU stays below the HPA target, staying at min replicas is healthy.
+    """
+    if peak_cpu_util is None or max_replicas is None:
+        return False, f"{component}: insufficient data to evaluate HPA behavior"
+
+    scaled = max_replicas > HPA_MIN_REPLICAS
+    cpu_crossed_target = peak_cpu_util >= HPA_TARGET_CPU_PERCENT
+
+    if cpu_crossed_target and scaled:
+        return True, (
+            f"{component}: PASS - CPU crossed HPA target "
+            f"({peak_cpu_util:.2f}% >= {HPA_TARGET_CPU_PERCENT:.1f}%) and workload scaled to {fmt_int(max_replicas)} replicas"
+        )
+
+    if not cpu_crossed_target and not scaled:
+        return True, (
+            f"{component}: PASS - CPU stayed below HPA target "
+            f"({peak_cpu_util:.2f}% < {HPA_TARGET_CPU_PERCENT:.1f}%) and workload correctly remained at {fmt_int(max_replicas)} replica"
+        )
+
+    if cpu_crossed_target and not scaled:
+        return False, (
+            f"{component}: FAIL - CPU crossed HPA target "
+            f"({peak_cpu_util:.2f}% >= {HPA_TARGET_CPU_PERCENT:.1f}%) but workload did not scale beyond {fmt_int(max_replicas)} replica"
+        )
+
+    return False, (
+        f"{component}: WARN - CPU stayed below HPA target "
+        f"({peak_cpu_util:.2f}% < {HPA_TARGET_CPU_PERCENT:.1f}%) but workload still scaled to {fmt_int(max_replicas)} replicas"
+    )
 
 
 def build_report(args: argparse.Namespace) -> str:
@@ -188,12 +234,13 @@ def build_report(args: argparse.Namespace) -> str:
     du_sr = safe_percent(du_success, du_total)
     cu_sr = safe_percent(cu_success, cu_total)
 
-    rach_threshold = 75.0
-    attach_threshold = 79.5
+    pass_rach = du_sr is not None and du_sr >= RACH_SR_THRESHOLD
+    pass_attach = cu_sr is not None and cu_sr >= ATTACH_SR_THRESHOLD
 
-    pass_rach = du_sr is not None and du_sr >= rach_threshold
-    pass_attach = cu_sr is not None and cu_sr >= attach_threshold
-    pass_scaling = (du_max_replicas or 0) >= 2 and (cu_max_replicas or 0) >= 2
+    pass_du_hpa, du_hpa_message = evaluate_hpa_behavior("DU", du_peak_cpu_util, du_max_replicas)
+    pass_cu_hpa, cu_hpa_message = evaluate_hpa_behavior("CU", cu_peak_cpu_util, cu_max_replicas)
+    pass_scaling = pass_du_hpa and pass_cu_hpa
+
     overall_pass = pass_rach and pass_attach and pass_scaling
 
     report_lines = [
@@ -201,6 +248,12 @@ def build_report(args: argparse.Namespace) -> str:
         f"RAN AIOps Run Analysis Report - Build #{run_id}",
         "=" * 72,
         f"Analysis window: {start} → {end} epoch seconds ({duration_seconds}s)",
+        "",
+        "Scaling Configuration",
+        "-" * 72,
+        f"HPA target CPU         : {fmt_number(HPA_TARGET_CPU_PERCENT)}%",
+        f"HPA min replicas       : {HPA_MIN_REPLICAS}",
+        f"HPA max replicas       : {HPA_MAX_REPLICAS}",
         "",
         "DU / RACH Summary",
         "-" * 72,
@@ -230,9 +283,11 @@ def build_report(args: argparse.Namespace) -> str:
         "",
         "AIOps Assessment",
         "-" * 72,
-        f"RACH threshold check   : {'PASS' if pass_rach else 'FAIL'} ({fmt_number(du_sr)}% >= {rach_threshold}%)",
-        f"Attach threshold check : {'PASS' if pass_attach else 'FAIL'} ({fmt_number(cu_sr)}% >= {attach_threshold}%)",
-        f"HPA scaling check      : {'PASS' if pass_scaling else 'FAIL'} (CU max={fmt_int(cu_max_replicas)}, DU max={fmt_int(du_max_replicas)})",
+        f"RACH threshold check   : {'PASS' if pass_rach else 'FAIL'} ({fmt_number(du_sr)}% >= {RACH_SR_THRESHOLD}%)",
+        f"Attach threshold check : {'PASS' if pass_attach else 'FAIL'} ({fmt_number(cu_sr)}% >= {ATTACH_SR_THRESHOLD}%)",
+        f"HPA behavior check     : {'PASS' if pass_scaling else 'FAIL'}",
+        f"  - {du_hpa_message}",
+        f"  - {cu_hpa_message}",
         "",
         f"Overall verdict        : {'PASS' if overall_pass else 'FAIL'}",
         "",
@@ -241,18 +296,18 @@ def build_report(args: argparse.Namespace) -> str:
     ]
 
     if overall_pass:
-        report_lines.append("The run passed the core telecom KPI gates and HPA reacted to load by scaling the CU/DU workloads.")
+        report_lines.append("The run passed the core telecom KPI gates and HPA behavior matched observed CPU pressure.")
     else:
-        report_lines.append("The run needs investigation because one or more KPI/scaling checks failed.")
+        report_lines.append("The run needs investigation because one or more KPI or HPA behavior checks failed.")
 
     if du_total and cu_total and du_total > cu_total:
-        report_lines.append("DU attempts are higher than CU requests, which is expected when some RACH attempts fail before reaching CU attach processing.")
+        report_lines.append("DU RACH attempts are higher than CU attach requests, which is expected when some RACH attempts fail at DU before progressing to CU attach processing.")
 
     if du_peak_cpu_util and du_peak_cpu_util > 100:
-        report_lines.append("DU CPU utilization exceeded 100% of requested CPU, indicating the DU pod was under strong CPU pressure before/while HPA scaled.")
+        report_lines.append("DU CPU utilization exceeded 100% of requested CPU, indicating strong DU-side CPU pressure during the run.")
 
     if cu_peak_cpu_util and cu_peak_cpu_util > 100:
-        report_lines.append("CU CPU utilization exceeded 100% of requested CPU, indicating the CU pod was under strong CPU pressure before/while HPA scaled.")
+        report_lines.append("CU CPU utilization exceeded 100% of requested CPU, indicating strong CU-side CPU pressure during the run.")
 
     report_lines.append("=" * 72)
 
