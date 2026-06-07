@@ -133,6 +133,82 @@ def evaluate_hpa_behavior(component: str, peak_cpu_util: Optional[float], max_re
     )
 
 
+# ---------------------------------------------------------------------
+# Scaling pattern classification and interpretation functions
+# ---------------------------------------------------------------------
+
+def classify_scaling_pattern(du_max_replicas: Optional[float], cu_max_replicas: Optional[float]) -> str:
+    """Classify which part of the simulated RAN workload scaled during the run."""
+    du_scaled = du_max_replicas is not None and du_max_replicas > HPA_MIN_REPLICAS
+    cu_scaled = cu_max_replicas is not None and cu_max_replicas > HPA_MIN_REPLICAS
+
+    if du_scaled and cu_scaled:
+        return "DU and CU scaled"
+    if du_scaled and not cu_scaled:
+        return "DU-only scaling"
+    if cu_scaled and not du_scaled:
+        return "CU-only scaling"
+    return "No scaling"
+
+
+def build_scaling_interpretation(
+    scaling_pattern: str,
+    du_peak_cpu_util: Optional[float],
+    cu_peak_cpu_util: Optional[float],
+    du_max_latency: Optional[float],
+    cu_max_latency: Optional[float],
+) -> list[str]:
+    """
+    Build cautious AIOps interpretation text.
+
+    Important: this function does not claim that scaling improved latency.
+    We only claim that HPA behavior matched CPU pressure and identify where
+    the pressure appeared during the run.
+    """
+    lines: list[str] = []
+
+    if scaling_pattern == "No scaling":
+        lines.append(
+            "Scaling pattern: No scaling was observed. This is healthy when CPU utilization remains below the HPA target."
+        )
+    elif scaling_pattern == "DU-only scaling":
+        lines.append(
+            "Scaling pattern: DU-only scaling was observed. This indicates DU-side CPU pressure while CU remained comparatively comfortable."
+        )
+    elif scaling_pattern == "CU-only scaling":
+        lines.append(
+            "Scaling pattern: CU-only scaling was observed. This indicates CU-side CPU pressure while DU remained comparatively comfortable."
+        )
+    elif scaling_pattern == "DU and CU scaled":
+        lines.append(
+            "Scaling pattern: Both DU and CU scaled. This indicates end-to-end load pressure across both simulated RAN components."
+        )
+
+    if du_peak_cpu_util is not None and cu_peak_cpu_util is not None:
+        if du_peak_cpu_util > cu_peak_cpu_util * 1.5:
+            lines.append("CPU pressure was DU-dominant during this run.")
+        elif cu_peak_cpu_util > du_peak_cpu_util * 1.5:
+            lines.append("CPU pressure was CU-dominant during this run.")
+        else:
+            lines.append("CPU pressure was broadly distributed across CU and DU during this run.")
+
+    if du_max_latency is not None and du_max_latency >= 1000:
+        lines.append(
+            "DU max latency crossed 1000 ms. Treat this as a latency stress signal for DU-side processing, not automatic proof that HPA improved or worsened latency."
+        )
+
+    if cu_max_latency is not None and cu_max_latency >= 1000:
+        lines.append(
+            "CU max latency crossed 1000 ms. Treat this as a latency stress signal for CU-side processing, not automatic proof that HPA improved or worsened latency."
+        )
+
+    lines.append(
+        "Latency benefit is not asserted in this report because the current test captures run-level maxima and averages, not before-vs-after scaling latency recovery."
+    )
+
+    return lines
+
+
 def build_report(args: argparse.Namespace) -> str:
     """Query Prometheus and build a human-readable AIOps report."""
     run_id = args.run_id
@@ -240,6 +316,14 @@ def build_report(args: argparse.Namespace) -> str:
     pass_du_hpa, du_hpa_message = evaluate_hpa_behavior("DU", du_peak_cpu_util, du_max_replicas)
     pass_cu_hpa, cu_hpa_message = evaluate_hpa_behavior("CU", cu_peak_cpu_util, cu_max_replicas)
     pass_scaling = pass_du_hpa and pass_cu_hpa
+    scaling_pattern = classify_scaling_pattern(du_max_replicas, cu_max_replicas)
+    scaling_interpretation = build_scaling_interpretation(
+        scaling_pattern,
+        du_peak_cpu_util,
+        cu_peak_cpu_util,
+        du_max_latency,
+        cu_max_latency,
+    )
 
     overall_pass = pass_rach and pass_attach and pass_scaling
 
@@ -288,6 +372,7 @@ def build_report(args: argparse.Namespace) -> str:
         f"HPA behavior check     : {'PASS' if pass_scaling else 'FAIL'}",
         f"  - {du_hpa_message}",
         f"  - {cu_hpa_message}",
+        f"Scaling pattern        : {scaling_pattern}",
         "",
         f"Overall verdict        : {'PASS' if overall_pass else 'FAIL'}",
         "",
@@ -309,6 +394,10 @@ def build_report(args: argparse.Namespace) -> str:
     if cu_peak_cpu_util and cu_peak_cpu_util > 100:
         report_lines.append("CU CPU utilization exceeded 100% of requested CPU, indicating strong CU-side CPU pressure during the run.")
 
+    report_lines.append("")
+    report_lines.append("Scaling Interpretation")
+    report_lines.append("-" * 72)
+    report_lines.extend(scaling_interpretation)
     report_lines.append("=" * 72)
 
     return "\n".join(report_lines)

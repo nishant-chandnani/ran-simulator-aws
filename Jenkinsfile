@@ -19,7 +19,7 @@ pipeline {
         LOAD_PHASE_2_ROUNDS = "5"
         LOAD_PHASE_2_REQUESTS = "150"
         LOAD_PHASE_3_ROUNDS = "10"
-        LOAD_PHASE_3_REQUESTS = "300"
+        LOAD_PHASE_3_REQUESTS = "1000"
         RACH_THRESHOLD = "75"
         ATTACH_THRESHOLD = "79.5"
     }
