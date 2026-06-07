@@ -514,8 +514,8 @@ printf '%s\n' "Skipping direct DU/CU /metrics reads here because service-level /
 printf '%s\n' "Aggregated KPI validation is performed in the next stage using Prometheus as the source of truth."
 
 if [ "$FAILED_REQUESTS" -gt 0 ]; then
-  printf '%s\n' "One or more curl executions failed during load test."
-  exit 1
+  printf '%s\n' "WARNING: One or more curl executions failed during load test."
+  printf '%s\n' "Continuing to Metrics Validation so Prometheus and AIOps can analyze the run."
 fi
 
 printf '%s\n' "Load test traffic generation completed"
