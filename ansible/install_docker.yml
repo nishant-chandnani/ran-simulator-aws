@@ -2,7 +2,42 @@
   hosts: web
   become: yes
 
+  vars:
+    jenkins_public_url: "http://{{ inventory_hostname }}:8080"
+    jenkins_cli_url: "{{ jenkins_public_url }}"
+    jenkins_admin_user: admin
+    jenkins_admin_password: admin
+    jenkins_pipeline_job_name: ran-simulator-pipeline
+    github_repo_url: https://github.com/nishant-chandnani/ran-simulator-aws.git
+    github_branch: main
+    jenkins_plugins:
+      - workflow-aggregator
+      - git
+      - github
+      - docker-workflow
+      - credentials
+      - plain-credentials
+      - pipeline-stage-view
+
   tasks:
+    - name: Install growpart utility
+      yum:
+        name: cloud-utils-growpart
+        state: present
+
+    - name: Expand root partition to use full EBS volume
+      command: growpart /dev/nvme0n1 1
+      register: growpart_result
+      changed_when: "'CHANGED' in growpart_result.stdout"
+      failed_when: >
+        growpart_result.rc != 0 and
+        'NOCHANGE' not in growpart_result.stdout
+
+    - name: Expand XFS filesystem to fill partition
+      command: xfs_growfs /
+      register: xfs_result
+      changed_when: "'data blocks changed' in xfs_result.stdout"
+
     - name: Install Docker package
       yum:
         name: docker
@@ -17,7 +52,7 @@
       service:
         name: docker
         enabled: yes
-  
+
     - name: Install Git
       yum:
         name: git
@@ -27,7 +62,7 @@
       yum:
         name: bc
         state: present
-    
+
     - name: Install Java 21 (required for Jenkins)
       yum:
         name: java-21-amazon-corretto
@@ -60,6 +95,62 @@
         line: 'JAVA_HOME=/usr/lib/jvm/java-21-amazon-corretto'
         create: yes
 
+    - name: Create Jenkins systemd override directory
+      file:
+        path: /etc/systemd/system/jenkins.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Disable Jenkins setup wizard through systemd JAVA_OPTS
+      copy:
+        dest: /etc/systemd/system/jenkins.service.d/override.conf
+        mode: '0644'
+        content: |
+          [Service]
+          Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+
+    - name: Create Jenkins init.groovy.d directory
+      file:
+        path: /var/lib/jenkins/init.groovy.d
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: '0755'
+
+    - name: Create Jenkins admin user and configure Jenkins URL automatically
+      copy:
+        dest: /var/lib/jenkins/init.groovy.d/01-basic-security.groovy
+        owner: jenkins
+        group: jenkins
+        mode: '0644'
+        content: |
+          import jenkins.model.*
+          import hudson.security.*
+          import jenkins.install.InstallState
+          import jenkins.model.JenkinsLocationConfiguration
+
+          def instance = Jenkins.getInstance()
+
+          def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+          if (hudsonRealm.getUser("{{ jenkins_admin_user }}") == null) {
+            hudsonRealm.createAccount("{{ jenkins_admin_user }}", "{{ jenkins_admin_password }}")
+          }
+          instance.setSecurityRealm(hudsonRealm)
+
+          def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+          strategy.setAllowAnonymousRead(false)
+          instance.setAuthorizationStrategy(strategy)
+
+          def location = JenkinsLocationConfiguration.get()
+          location.setUrl("{{ jenkins_public_url }}/")
+          location.save()
+
+          instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
+          instance.save()
+
+    - name: Reload systemd after Jenkins override
+      systemd:
+        daemon_reload: yes
 
     - name: Ensure Jenkins is running after configuration
       service:
@@ -71,6 +162,106 @@
         name: jenkins
         enabled: yes
 
+    - name: Wait for Jenkins to be reachable
+      wait_for:
+        host: 127.0.0.1
+        port: 8080
+        delay: 10
+        timeout: 180
+
+    - name: Download Jenkins CLI jar
+      get_url:
+        url: "{{ jenkins_cli_url }}/jnlpJars/jenkins-cli.jar"
+        dest: /tmp/jenkins-cli.jar
+        mode: '0644'
+
+    - name: Install required Jenkins plugins
+      shell: |
+        java -jar /tmp/jenkins-cli.jar \
+          -s {{ jenkins_cli_url }} \
+          -webSocket \
+          -auth {{ jenkins_admin_user }}:{{ jenkins_admin_password }} \
+          install-plugin {{ jenkins_plugins | join(' ') }}
+      register: plugin_install_result
+      changed_when: "'Installing' in plugin_install_result.stdout or 'Success' in plugin_install_result.stdout or plugin_install_result.rc == 0"
+
+    - name: Restart Jenkins after plugin installation
+      service:
+        name: jenkins
+        state: restarted
+
+    - name: Wait for Jenkins after plugin restart
+      wait_for:
+        host: 127.0.0.1
+        port: 8080
+        delay: 20
+        timeout: 240
+
+    - name: Create Jenkins pipeline job XML
+      copy:
+        dest: /tmp/ran-simulator-pipeline-job.xml
+        mode: '0644'
+        content: |
+          <?xml version='1.1' encoding='UTF-8'?>
+          <flow-definition plugin="workflow-job">
+            <actions/>
+            <description>RAN Simulator CI/CD pipeline created automatically by Ansible.</description>
+            <keepDependencies>false</keepDependencies>
+            <properties>
+              <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github">
+                <projectUrl>{{ github_repo_url }}/</projectUrl>
+                <displayName></displayName>
+              </com.coravy.hudson.plugins.github.GithubProjectProperty>
+            </properties>
+            <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+              <scm class="hudson.plugins.git.GitSCM" plugin="git">
+                <configVersion>2</configVersion>
+                <userRemoteConfigs>
+                  <hudson.plugins.git.UserRemoteConfig>
+                    <url>{{ github_repo_url }}</url>
+                  </hudson.plugins.git.UserRemoteConfig>
+                </userRemoteConfigs>
+                <branches>
+                  <hudson.plugins.git.BranchSpec>
+                    <name>*/{{ github_branch }}</name>
+                  </hudson.plugins.git.BranchSpec>
+                </branches>
+                <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+                <submoduleCfg class="empty-list"/>
+                <extensions/>
+              </scm>
+              <scriptPath>Jenkinsfile</scriptPath>
+              <lightweight>true</lightweight>
+            </definition>
+            <triggers>
+              <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+                <spec></spec>
+              </com.cloudbees.jenkins.GitHubPushTrigger>
+            </triggers>
+            <disabled>false</disabled>
+          </flow-definition>
+
+    - name: Create or update Jenkins pipeline job
+      shell: |
+        if java -jar /tmp/jenkins-cli.jar \
+          -s {{ jenkins_cli_url }} \
+          -webSocket \
+          -auth {{ jenkins_admin_user }}:{{ jenkins_admin_password }} \
+          list-jobs | grep -qx "{{ jenkins_pipeline_job_name }}"; then
+          java -jar /tmp/jenkins-cli.jar \
+            -s {{ jenkins_cli_url }} \
+            -webSocket \
+            -auth {{ jenkins_admin_user }}:{{ jenkins_admin_password }} \
+            update-job "{{ jenkins_pipeline_job_name }}" < /tmp/ran-simulator-pipeline-job.xml
+        else
+          java -jar /tmp/jenkins-cli.jar \
+            -s {{ jenkins_cli_url }} \
+            -webSocket \
+            -auth {{ jenkins_admin_user }}:{{ jenkins_admin_password }} \
+            create-job "{{ jenkins_pipeline_job_name }}" < /tmp/ran-simulator-pipeline-job.xml
+        fi
+      register: pipeline_job_result
+      changed_when: true
 
     - name: Install kubectl
       get_url:

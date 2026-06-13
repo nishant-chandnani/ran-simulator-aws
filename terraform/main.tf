@@ -99,6 +99,11 @@ resource "aws_instance" "jenkins_server" {
   ami           = data.aws_ami.amazon_linux.id
   instance_type = "c7i-flex.large"
 
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
   key_name = aws_key_pair.deployer_key.key_name
 
   iam_instance_profile = aws_iam_instance_profile.jenkins_profile.name
@@ -116,7 +121,7 @@ resource "aws_instance" "jenkins_server" {
   }
 
   lifecycle {
-    # prevent_destroy = true
+    prevent_destroy = true
     ignore_changes = [
       ami
     ]
@@ -142,7 +147,7 @@ output "ec2_public_ip" {
 resource "local_file" "ansible_inventory" {
   content = <<EOT
 [web]
-${aws_eip.jenkins_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/id_rsa
+${aws_eip.jenkins_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'
 EOT
 
   filename = "${path.module}/../ansible/hosts"
