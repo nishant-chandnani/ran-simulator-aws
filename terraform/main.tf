@@ -41,22 +41,6 @@ resource "aws_security_group" "jenkins_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    description = "Grafana NodePort"
-    from_port   = 30300
-    to_port     = 30300
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Kubernetes API"
-    from_port   = 6443
-    to_port     = 6443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -132,7 +116,7 @@ resource "aws_instance" "jenkins_server" {
   }
 
   lifecycle {
-    prevent_destroy = true
+    # prevent_destroy = true
     ignore_changes = [
       ami
     ]

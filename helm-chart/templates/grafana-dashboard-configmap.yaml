@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ran-performance-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  ran-performance-dashboard.json: |
+{{ .Files.Get "files/ran-performance-dashboard.json" | indent 4 }}

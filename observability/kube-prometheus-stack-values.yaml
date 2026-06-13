@@ -1,0 +1,27 @@
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelectorNilUsesHelmValues: false
+
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: admin
+
+  service:
+    type: ClusterIP
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: monitoring
+
+kube-state-metrics:
+  metricLabelsAllowlist:
+    - horizontalpodautoscalers=[app,pipeline_run_id,app_version]
+    - pods=[app,pipeline_run_id,app_version]

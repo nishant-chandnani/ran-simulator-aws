@@ -94,21 +94,19 @@ pipeline {
                 helm repo update
 
                 echo "Installing AWS Load Balancer Controller..."
-                echo "Preparing AWS Load Balancer Controller Helm values..."
-                cat > /tmp/aws-load-balancer-controller-values.yaml <<EOF
-clusterName: $EKS_CLUSTER_NAME
-region: $AWS_REGION
-vpcId: $EKS_VPC_ID
-serviceAccount:
-  create: true
-  name: aws-load-balancer-controller
-  annotations:
-    eks.amazonaws.com/role-arn: $ALB_CONTROLLER_ROLE_ARN
-EOF
+
+                if [ ! -f platform/aws-load-balancer-controller-values.yaml ]; then
+                  echo "Missing platform/aws-load-balancer-controller-values.yaml"
+                  exit 1
+                fi
 
                 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
                   --namespace kube-system \
-                  -f /tmp/aws-load-balancer-controller-values.yaml
+                  --set clusterName=$EKS_CLUSTER_NAME \
+                  --set region=$AWS_REGION \
+                  --set vpcId=$EKS_VPC_ID \
+                  --set serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$ALB_CONTROLLER_ROLE_ARN \
+                  -f platform/aws-load-balancer-controller-values.yaml
 
                 echo "Waiting for AWS Load Balancer Controller rollout..."
                 kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
@@ -128,23 +126,15 @@ EOF
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
                 helm repo update
 
-                echo "Installing kube-prometheus-stack with Prometheus and Grafana..."
+                if [ ! -f observability/kube-prometheus-stack-values.yaml ]; then
+                  echo "Missing observability/kube-prometheus-stack-values.yaml"
+                  exit 1
+                fi
+
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --create-namespace \
-                  --set alertmanager.enabled=false \
-                  --set prometheus.prometheusSpec.retention=24h \
-                  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-                  --set prometheus.prometheusSpec.serviceMonitorNamespaceSelectorNilUsesHelmValues=false \
-                  --set grafana.enabled=true \
-                  --set grafana.adminUser=admin \
-                  --set grafana.adminPassword=admin \
-                  --set grafana.service.type=ClusterIP \
-                  --set grafana.sidecar.dashboards.enabled=true \
-                  --set grafana.sidecar.dashboards.label=grafana_dashboard \
-                  --set grafana.sidecar.dashboards.searchNamespace=monitoring \
-                  --set-string 'kube-state-metrics.metricLabelsAllowlist[0]=horizontalpodautoscalers=[app\\,pipeline_run_id\\,app_version]' \
-                  --set-string 'kube-state-metrics.metricLabelsAllowlist[1]=pods=[app\\,pipeline_run_id\\,app_version]'
+                  -f observability/kube-prometheus-stack-values.yaml
 
                 echo "Waiting for Prometheus Operator rollout..."
                 kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
@@ -157,34 +147,6 @@ EOF
 
                 echo "Validating observability services..."
                 kubectl get svc -n monitoring
-                '''
-            }
-        }
-
-        stage('Provision Grafana Dashboard') {
-            steps {
-                sh '''
-                export KUBECONFIG="$KUBECONFIG_PATH"
-
-                DASHBOARD_FILE="grafana/dashboards/ran-performance-dashboard.json"
-
-                if [ ! -f "$DASHBOARD_FILE" ]; then
-                  echo "Grafana dashboard file not found at $DASHBOARD_FILE"
-                  echo "Skipping dashboard provisioning for now."
-                  exit 0
-                fi
-
-                echo "Provisioning RAN Performance Grafana dashboard from Git..."
-
-                kubectl create configmap ran-performance-dashboard \
-                  -n monitoring \
-                  --from-file=ran-performance-dashboard.json="$DASHBOARD_FILE" \
-                  --dry-run=client -o yaml | \
-                  kubectl label --local -f - grafana_dashboard=1 -o yaml | \
-                  kubectl apply -f -
-
-                echo "Dashboard ConfigMap applied. Grafana sidecar should pick it up automatically."
-                kubectl get configmap ran-performance-dashboard -n monitoring --show-labels
                 '''
             }
         }
