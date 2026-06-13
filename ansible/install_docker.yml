@@ -8,7 +8,8 @@
     jenkins_admin_user: admin
     jenkins_admin_password: admin
     jenkins_pipeline_job_name: ran-simulator-pipeline
-    github_repo_url: https://github.com/nishant-chandnani/ran-simulator-aws.git
+    github_repo_url: "{{ lookup('env', 'GITHUB_REPO_URL') | default('https://github.com/nishant-chandnani/ran-simulator-aws.git', true) }}"
+    github_webhook_token: "{{ lookup('env', 'JENKINS_WEBHOOK_TOKEN') | default('ran-simulator-webhook', true) }}"
     github_branch: main
     jenkins_plugins:
       - workflow-aggregator
@@ -237,7 +238,7 @@
             <triggers>
               <org.jenkinsci.plugins.gwt.GenericTrigger plugin="generic-webhook-trigger">
                 <spec></spec>
-                <token>ran-simulator-webhook</token>
+                <token>{{ github_webhook_token }}</token>
                 <printContributedVariables>false</printContributedVariables>
                 <printPostContent>false</printPostContent>
                 <silentResponse>false</silentResponse>

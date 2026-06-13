@@ -8,6 +8,7 @@ pipeline {
 
     environment {
         AWS_REGION = "ap-southeast-2"
+        METRICS_SERVER_VERSION = "v0.7.2"
         AWS_ACCOUNT_ID = "${sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()}"
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
@@ -51,7 +52,7 @@ pipeline {
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
                 echo "Installing/Updating Metrics Server..."
-                kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+                kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/$METRICS_SERVER_VERSION/components.yaml
 
                 echo "Waiting for Metrics Server deployment rollout..."
                 kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s

@@ -1,5 +1,17 @@
 data "aws_caller_identity" "current" {}
 
+variable "jenkins_iam_role_name" {
+  description = "Name of the IAM role attached to the Jenkins EC2 instance that needs EKS access."
+  type        = string
+  default     = "jenkins-ecr-role"
+}
+
+variable "alb_controller_iam_role_name" {
+  description = "Name of the IAM role used by the AWS Load Balancer Controller through IRSA."
+  type        = string
+  default     = "AmazonEKSLoadBalancerControllerRole"
+}
+
 resource "aws_iam_role" "eks_cluster_role" {
   name = "${var.project_name}-eks-cluster-role"
 
@@ -130,7 +142,7 @@ resource "aws_eks_node_group" "eks_node_group" {
 
 resource "aws_eks_access_entry" "jenkins_access_entry" {
   cluster_name  = aws_eks_cluster.eks_cluster.name
-  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/jenkins-ecr-role"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.jenkins_iam_role_name}"
   type          = "STANDARD"
 
   depends_on = [
@@ -185,7 +197,7 @@ resource "aws_iam_policy" "alb_controller_policy" {
 # -----------------------------------------------------------------------------
 
 resource "aws_iam_role" "alb_controller_role" {
-  name = "AmazonEKSLoadBalancerControllerRole"
+  name = var.alb_controller_iam_role_name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -207,7 +219,7 @@ resource "aws_iam_role" "alb_controller_role" {
   })
 
   tags = {
-    Name        = "AmazonEKSLoadBalancerControllerRole"
+    Name        = var.alb_controller_iam_role_name
     Environment = var.environment
   }
 }

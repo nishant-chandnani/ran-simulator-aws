@@ -2,6 +2,20 @@ provider "aws" {
   region = "ap-southeast-2"
 }
 
+variable "ssh_public_key_path" {
+  description = "Local path to the SSH public key used to create the EC2 key pair."
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "ssh_private_key_path" {
+  description = "Local path to the SSH private key used by Ansible to connect to Jenkins EC2."
+  type        = string
+  default     = "~/.ssh/id_rsa"
+}
+
+data "aws_caller_identity" "current" {}
+
 # Fetch latest Amazon Linux 2023 AMI dynamically
 data "aws_ami" "amazon_linux" {
   most_recent = true
@@ -17,7 +31,7 @@ data "aws_ami" "amazon_linux" {
 # Create key pair using your local SSH public key
 resource "aws_key_pair" "deployer_key" {
   key_name   = "terraform-key"
-  public_key = file("~/.ssh/id_rsa.pub")
+  public_key = file(pathexpand(var.ssh_public_key_path))
 }
 
 # Security group to allow SSH and Jenkins access
@@ -83,7 +97,14 @@ resource "aws_iam_role_policy" "jenkins_eks_describe_cluster_policy" {
         Action = [
           "eks:DescribeCluster"
         ]
-        Resource = "arn:aws:eks:ap-southeast-2:276594885557:cluster/ran-simulator-eks"
+        Resource = "arn:aws:eks:ap-southeast-2:${data.aws_caller_identity.current.account_id}:cluster/ran-simulator-eks"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole"
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/AmazonEKSLoadBalancerControllerRole"
       }
     ]
   })
@@ -147,7 +168,7 @@ output "ec2_public_ip" {
 resource "local_file" "ansible_inventory" {
   content = <<EOT
 [web]
-${aws_eip.jenkins_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'
+${aws_eip.jenkins_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=${var.ssh_private_key_path} ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'
 EOT
 
   filename = "${path.module}/../ansible/hosts"
