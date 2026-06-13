@@ -14,6 +14,7 @@
       - workflow-aggregator
       - git
       - github
+      - generic-webhook-trigger
       - docker-workflow
       - credentials
       - plain-credentials
@@ -234,9 +235,19 @@
               <lightweight>true</lightweight>
             </definition>
             <triggers>
-              <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+              <org.jenkinsci.plugins.gwt.GenericTrigger plugin="generic-webhook-trigger">
                 <spec></spec>
-              </com.cloudbees.jenkins.GitHubPushTrigger>
+                <token>ran-simulator-webhook</token>
+                <printContributedVariables>false</printContributedVariables>
+                <printPostContent>false</printPostContent>
+                <silentResponse>false</silentResponse>
+                <shouldNotFlattern>false</shouldNotFlattern>
+                <regexpFilterText></regexpFilterText>
+                <regexpFilterExpression></regexpFilterExpression>
+                <genericVariables/>
+                <genericRequestVariables/>
+                <genericHeaderVariables/>
+              </org.jenkinsci.plugins.gwt.GenericTrigger>
             </triggers>
             <disabled>false</disabled>
           </flow-definition>
