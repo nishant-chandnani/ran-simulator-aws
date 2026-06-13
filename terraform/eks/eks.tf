@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_role" "eks_cluster_role" {
   name = "${var.project_name}-eks-cluster-role"
 
@@ -128,7 +130,7 @@ resource "aws_eks_node_group" "eks_node_group" {
 
 resource "aws_eks_access_entry" "jenkins_access_entry" {
   cluster_name  = aws_eks_cluster.eks_cluster.name
-  principal_arn = "arn:aws:iam::276594885557:role/jenkins-ecr-role"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/jenkins-ecr-role"
   type          = "STANDARD"
 
   depends_on = [
@@ -213,4 +215,12 @@ resource "aws_iam_role" "alb_controller_role" {
 resource "aws_iam_role_policy_attachment" "alb_controller_policy_attachment" {
   role       = aws_iam_role.alb_controller_role.name
   policy_arn = aws_iam_policy.alb_controller_policy.arn
+}
+
+output "aws_account_id" {
+  value = data.aws_caller_identity.current.account_id
+}
+
+output "alb_controller_role_arn" {
+  value = aws_iam_role.alb_controller_role.arn
 }

@@ -8,11 +8,12 @@ pipeline {
 
     environment {
         AWS_REGION = "ap-southeast-2"
-        ECR_REGISTRY = "276594885557.dkr.ecr.ap-southeast-2.amazonaws.com"
+        AWS_ACCOUNT_ID = "${sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()}"
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         VERSION = "${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
         KUBECONFIG_PATH = "/var/lib/jenkins/.kube/config"
         EKS_CLUSTER_NAME = "ran-simulator-eks"
-        ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::276594885557:role/AmazonEKSLoadBalancerControllerRole"
+        ALB_CONTROLLER_ROLE_NAME = "AmazonEKSLoadBalancerControllerRole"
         ECR_REPOSITORY_PREFIX = "ran-simulator"
         LOAD_PHASE_1_ROUNDS = "5"
         LOAD_PHASE_1_REQUESTS = "50"
@@ -89,6 +90,19 @@ pipeline {
 
                 echo "Using EKS VPC ID: $EKS_VPC_ID"
 
+                echo "Discovering AWS Load Balancer Controller IAM role ARN dynamically..."
+                ALB_CONTROLLER_ROLE_ARN=$(aws iam get-role \
+                  --role-name "$ALB_CONTROLLER_ROLE_NAME" \
+                  --query "Role.Arn" \
+                  --output text)
+
+                if [ -z "$ALB_CONTROLLER_ROLE_ARN" ] || [ "$ALB_CONTROLLER_ROLE_ARN" = "None" ]; then
+                  echo "Unable to discover IAM role ARN for $ALB_CONTROLLER_ROLE_NAME"
+                  exit 1
+                fi
+
+                echo "Using AWS Load Balancer Controller role ARN: $ALB_CONTROLLER_ROLE_ARN"
+
                 echo "Adding AWS EKS Helm repository..."
                 helm repo add eks https://aws.github.io/eks-charts || true
                 helm repo update
@@ -102,11 +116,9 @@ pipeline {
 
                 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
                   --namespace kube-system \
-                  --set clusterName=$EKS_CLUSTER_NAME \
-                  --set region=$AWS_REGION \
+                  -f platform/aws-load-balancer-controller-values.yaml \
                   --set vpcId=$EKS_VPC_ID \
-                  --set-string 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn'="$ALB_CONTROLLER_ROLE_ARN" \
-                  -f platform/aws-load-balancer-controller-values.yaml
+                  --set-string serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn="$ALB_CONTROLLER_ROLE_ARN"
 
                 echo "Waiting for AWS Load Balancer Controller rollout..."
                 kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
