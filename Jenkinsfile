@@ -119,7 +119,7 @@ pipeline {
                   --namespace kube-system \
                   -f platform/aws-load-balancer-controller-values.yaml \
                   --set vpcId=$EKS_VPC_ID \
-                  --set-string serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn="$ALB_CONTROLLER_ROLE_ARN"
+                  --set-string serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"="$ALB_CONTROLLER_ROLE_ARN"
 
                 echo "Waiting for AWS Load Balancer Controller rollout..."
                 kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s
