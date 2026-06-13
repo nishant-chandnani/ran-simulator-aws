@@ -105,7 +105,7 @@ pipeline {
                   --set clusterName=$EKS_CLUSTER_NAME \
                   --set region=$AWS_REGION \
                   --set vpcId=$EKS_VPC_ID \
-                  --set serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$ALB_CONTROLLER_ROLE_ARN \
+                  --set-string 'serviceAccount.annotations.eks\.amazonaws\.com/role-arn'="$ALB_CONTROLLER_ROLE_ARN" \
                   -f platform/aws-load-balancer-controller-values.yaml
 
                 echo "Waiting for AWS Load Balancer Controller rollout..."
