@@ -16,6 +16,7 @@ build window captures the highest counter value reached by each pod during that
 run, then sum(...) aggregates those pod-level maxima.
 """
 
+from __future__ import annotations
 import argparse
 import json
 import sys
