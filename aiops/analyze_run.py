@@ -72,6 +72,51 @@ def prometheus_query(prom_url: str, promql: str, query_time: int) -> Optional[fl
         return None
 
 
+# ---------------------------------------------------------------------
+# Prometheus range query for time series samples
+# ---------------------------------------------------------------------
+def prometheus_query_range(
+    prom_url: str,
+    promql: str,
+    start: int,
+    end: int,
+    step_seconds: int = 10,
+) -> list[tuple[int, float]]:
+    """Call Prometheus /api/v1/query_range and return timestamp/value samples."""
+    query_params = urllib.parse.urlencode(
+        {
+            "query": promql,
+            "start": start,
+            "end": end,
+            "step": step_seconds,
+        }
+    )
+    url = f"{prom_url.rstrip('/')}/api/v1/query_range?{query_params}"
+
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            payload = response.read().decode("utf-8")
+            data = json.loads(payload)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to query Prometheus range for: {promql}\nError: {exc}") from exc
+
+    if data.get("status") != "success":
+        raise RuntimeError(f"Prometheus range query failed for: {promql}\nResponse: {data}")
+
+    result = data.get("data", {}).get("result", [])
+    if not result:
+        return []
+
+    samples: list[tuple[int, float]] = []
+    for raw_ts, raw_value in result[0].get("values", []):
+        try:
+            samples.append((int(float(raw_ts)), float(raw_value)))
+        except (TypeError, ValueError):
+            continue
+
+    return samples
+
+
 def fmt_number(value: Optional[float], decimals: int = 2) -> str:
     """Format a number safely for report output."""
     if value is None:
@@ -96,6 +141,136 @@ def safe_percent(numerator: Optional[float], denominator: Optional[float]) -> Op
     if numerator is None or denominator is None or denominator == 0:
         return None
     return numerator / denominator * 100
+
+
+# ---------------------------------------------------------------------
+# Helper functions for latency recovery analysis
+# ---------------------------------------------------------------------
+def average_values(samples: list[tuple[int, float]]) -> Optional[float]:
+    """Return arithmetic average for a list of timestamp/value samples."""
+    values = [value for _, value in samples if value is not None]
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def first_scale_timestamp(
+    replica_samples: list[tuple[int, float]],
+    min_replicas: Optional[float],
+) -> Optional[int]:
+    """Return the first timestamp where desired replicas rose above minReplicas."""
+    min_value = value_or_default(min_replicas, DEFAULT_HPA_MIN_REPLICAS)
+    for ts, value in replica_samples:
+        if value > min_value:
+            return ts
+    return None
+
+
+def peak_replica_timestamp(replica_samples: list[tuple[int, float]]) -> Optional[int]:
+    """Return the first timestamp where the highest replica value was observed."""
+    if not replica_samples:
+        return None
+    peak_value = max(value for _, value in replica_samples)
+    for ts, value in replica_samples:
+        if value == peak_value:
+            return ts
+    return None
+
+
+def filter_samples(
+    samples: list[tuple[int, float]],
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+) -> list[tuple[int, float]]:
+    """Filter timestamp/value samples by optional inclusive start and end bounds."""
+    filtered: list[tuple[int, float]] = []
+    for ts, value in samples:
+        if start is not None and ts < start:
+            continue
+        if end is not None and ts > end:
+            continue
+        filtered.append((ts, value))
+    return filtered
+
+
+def calculate_latency_recovery(
+    component: str,
+    latency_samples: list[tuple[int, float]],
+    replica_samples: list[tuple[int, float]],
+    min_replicas: Optional[float],
+    run_start: int,
+    run_end: int,
+) -> dict[str, Optional[float] | Optional[int] | str]:
+    """
+    Estimate whether latency improved after HPA scale-out.
+
+    This is correlation-aware, not proof of strict causation. It compares average latency before the first
+    scale-out event with average latency after peak HPA replicas were reached.
+    """
+    scale_ts = first_scale_timestamp(replica_samples, min_replicas)
+    peak_ts = peak_replica_timestamp(replica_samples)
+
+    result: dict[str, Optional[float] | Optional[int] | str] = {
+        "component": component,
+        "first_scale_ts": scale_ts,
+        "peak_replica_ts": peak_ts,
+        "pre_latency": None,
+        "post_latency": None,
+        "improvement_percent": None,
+        "confidence": "insufficient-data",
+        "message": f"{component}: insufficient data to evaluate latency recovery after scale-out.",
+    }
+
+    if scale_ts is None or peak_ts is None:
+        result["message"] = f"{component}: no scale-out event was observed, so latency recovery after scaling is not applicable."
+        return result
+
+    pre_window_start = max(run_start, scale_ts - 90)
+    pre_window_end = max(run_start, scale_ts - 10)
+    post_window_start = min(run_end, peak_ts + 20)
+    post_window_end = run_end
+
+    pre_latency = average_values(filter_samples(latency_samples, pre_window_start, pre_window_end))
+    post_latency = average_values(filter_samples(latency_samples, post_window_start, post_window_end))
+
+    result["pre_latency"] = pre_latency
+    result["post_latency"] = post_latency
+
+    if pre_latency is None or post_latency is None or pre_latency <= 0:
+        result["message"] = f"{component}: scale-out was observed, but there were not enough latency samples before and after scaling to estimate recovery."
+        return result
+
+    improvement = (pre_latency - post_latency) / pre_latency * 100
+    result["improvement_percent"] = improvement
+
+    if improvement >= 15:
+        result["confidence"] = "strong-correlation"
+        result["message"] = (
+            f"{component}: latency recovery observed after scale-out. Average latency improved from "
+            f"{pre_latency:.2f} ms before scaling to {post_latency:.2f} ms after peak scale-out "
+            f"({improvement:.2f}% improvement). This is a strong correlation signal, not absolute proof of causation."
+        )
+    elif improvement >= 5:
+        result["confidence"] = "moderate-correlation"
+        result["message"] = (
+            f"{component}: modest latency recovery observed after scale-out. Average latency improved from "
+            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}% improvement). "
+            f"This suggests scale-out helped, but confidence is moderate."
+        )
+    elif improvement > -5:
+        result["confidence"] = "neutral"
+        result["message"] = (
+            f"{component}: latency remained broadly stable after scale-out. Average latency changed from "
+            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}%)."
+        )
+    else:
+        result["confidence"] = "no-recovery-observed"
+        result["message"] = (
+            f"{component}: no latency recovery was observed after scale-out. Average latency moved from "
+            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}%). This may indicate continued downstream pressure, warm-up effects, or insufficient scale-out time."
+        )
+
+    return result
 
 
 def evaluate_hpa_behavior(
@@ -194,13 +369,18 @@ def build_scaling_interpretation(
     cu_peak_cpu_util: Optional[float],
     du_max_latency: Optional[float],
     cu_max_latency: Optional[float],
+    du_latency_recovery: Optional[dict[str, Optional[float] | Optional[int] | str]] = None,
+    cu_latency_recovery: Optional[dict[str, Optional[float] | Optional[int] | str]] = None,
 ) -> list[str]:
     """
-    Build cautious AIOps interpretation text.
+    Build AIOps interpretation text.
 
-    Important: this function does not claim that scaling improved latency.
-    We only claim that HPA behavior matched CPU pressure and identify where
-    the pressure appeared during the run.
+    This function now distinguishes between:
+    - proven HPA behavior from CPU and replica metrics, and
+    - correlation-based latency recovery after scale-out.
+
+    We intentionally use the word correlation instead of causation because latency can also be affected
+    by traffic mix, pod warm-up, downstream pressure, and scrape timing.
     """
     lines: list[str] = []
 
@@ -243,8 +423,14 @@ def build_scaling_interpretation(
             "CU max latency crossed 1000 ms. Treat this as a latency stress signal for CU-side processing, not automatic proof that HPA improved or worsened latency."
         )
 
+    if du_latency_recovery is not None:
+        lines.append(str(du_latency_recovery["message"]))
+
+    if cu_latency_recovery is not None:
+        lines.append(str(cu_latency_recovery["message"]))
+
     lines.append(
-        "Latency benefit is not asserted in this report because the current test captures run-level maxima and averages, not before-vs-after scaling latency recovery."
+        "Latency recovery analysis is correlation-based: it compares latency before first scale-out with latency after peak scale-out. It is useful AIOps evidence, but it should be described as correlation rather than absolute causation."
     )
 
     return lines
@@ -263,6 +449,11 @@ def build_report(args: argparse.Namespace) -> str:
         if args.debug:
             print(f"\nDEBUG PromQL @ {end}:\n{promql}\n", file=sys.stderr)
         return prometheus_query(prom_url, promql, end)
+
+    def qr(promql: str, step_seconds: int = 10) -> list[tuple[int, float]]:
+        if args.debug:
+            print(f"\nDEBUG PromQL range @ {start} → {end}:\n{promql}\n", file=sys.stderr)
+        return prometheus_query_range(prom_url, promql, start, end, step_seconds)
 
     # ---------------------------------------------------------------------
     # App metrics: use sum(max_over_time(...[build_window]))
@@ -298,18 +489,21 @@ def build_report(args: argparse.Namespace) -> str:
     # HPA metrics: use HPA label join to keep the selected run_id.
     # ---------------------------------------------------------------------
     du_hpa_series = (
-        f'kube_horizontalpodautoscaler_status_current_replicas{{namespace="default",horizontalpodautoscaler="du-hpa"}} '
+        f'kube_horizontalpodautoscaler_status_desired_replicas{{namespace="default",horizontalpodautoscaler="du-hpa"}} '
         f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
         f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="du-hpa",label_pipeline_run_id="{run_id}"}}'
     )
     cu_hpa_series = (
-        f'kube_horizontalpodautoscaler_status_current_replicas{{namespace="default",horizontalpodautoscaler="cu-hpa"}} '
+        f'kube_horizontalpodautoscaler_status_desired_replicas{{namespace="default",horizontalpodautoscaler="cu-hpa"}} '
         f'* on(namespace,horizontalpodautoscaler) group_left(label_pipeline_run_id) '
         f'kube_horizontalpodautoscaler_labels{{namespace="default",horizontalpodautoscaler="cu-hpa",label_pipeline_run_id="{run_id}"}}'
     )
 
     du_max_replicas = q(f'max(max_over_time(({du_hpa_series})[{range_window}:]))')
     cu_max_replicas = q(f'max(max_over_time(({cu_hpa_series})[{range_window}:]))')
+
+    du_replica_samples = qr(du_hpa_series)
+    cu_replica_samples = qr(cu_hpa_series)
 
     du_hpa_min_replicas = q(
         f'max(max_over_time((kube_horizontalpodautoscaler_spec_min_replicas{{namespace="default",horizontalpodautoscaler="du-hpa"}} '
@@ -379,6 +573,26 @@ def build_report(args: argparse.Namespace) -> str:
     du_peak_cpu_util = q(f'max_over_time(({du_cpu_util_series})[{range_window}:])')
     cu_peak_cpu_util = q(f'max_over_time(({cu_cpu_util_series})[{range_window}:])')
 
+    du_latency_samples_over_time = qr(f'avg(avg_end_to_end_latency_ms{{app="du",pipeline_run_id="{run_id}"}})')
+    cu_latency_samples_over_time = qr(f'avg(avg_attach_latency_ms{{app="cu",pipeline_run_id="{run_id}"}})')
+
+    du_latency_recovery = calculate_latency_recovery(
+        "DU",
+        du_latency_samples_over_time,
+        du_replica_samples,
+        du_hpa_min_replicas,
+        start,
+        end,
+    )
+    cu_latency_recovery = calculate_latency_recovery(
+        "CU",
+        cu_latency_samples_over_time,
+        cu_replica_samples,
+        cu_hpa_min_replicas,
+        start,
+        end,
+    )
+
     du_sr = safe_percent(du_success, du_total)
     cu_sr = safe_percent(cu_success, cu_total)
 
@@ -414,6 +628,8 @@ def build_report(args: argparse.Namespace) -> str:
         cu_peak_cpu_util,
         du_max_latency,
         cu_max_latency,
+        du_latency_recovery,
+        cu_latency_recovery,
     )
 
     overall_pass = pass_rach and pass_attach and pass_scaling
@@ -445,6 +661,9 @@ def build_report(args: argparse.Namespace) -> str:
         f"Peak DU CPU            : {fmt_number(du_peak_cpu_mcpu)} mCPU",
         f"Peak DU CPU utilization: {fmt_number(du_peak_cpu_util)}%",
         f"Max DU replicas        : {fmt_int(du_max_replicas)}",
+        f"DU latency pre-scale   : {fmt_number(du_latency_recovery['pre_latency'])} ms",
+        f"DU latency post-scale  : {fmt_number(du_latency_recovery['post_latency'])} ms",
+        f"DU latency improvement : {fmt_number(du_latency_recovery['improvement_percent'])}%",
         "",
         "CU / Attach Summary",
         "-" * 72,
@@ -458,6 +677,9 @@ def build_report(args: argparse.Namespace) -> str:
         f"Peak CU CPU            : {fmt_number(cu_peak_cpu_mcpu)} mCPU",
         f"Peak CU CPU utilization: {fmt_number(cu_peak_cpu_util)}%",
         f"Max CU replicas        : {fmt_int(cu_max_replicas)}",
+        f"CU latency pre-scale   : {fmt_number(cu_latency_recovery['pre_latency'])} ms",
+        f"CU latency post-scale  : {fmt_number(cu_latency_recovery['post_latency'])} ms",
+        f"CU latency improvement : {fmt_number(cu_latency_recovery['improvement_percent'])}%",
         "",
         "AIOps Assessment",
         "-" * 72,
