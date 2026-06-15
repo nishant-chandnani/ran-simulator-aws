@@ -265,11 +265,93 @@ def calculate_latency_recovery(
             f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}%)."
         )
     else:
-        result["confidence"] = "no-recovery-observed"
+        result["confidence"] = "latency-remained-elevated"
         result["message"] = (
-            f"{component}: no latency recovery was observed after scale-out. Average latency moved from "
-            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}%). This may indicate continued downstream pressure, warm-up effects, or insufficient scale-out time."
+            f"{component}: latency remained elevated despite scale-out. Average latency moved from "
+            f"{pre_latency:.2f} ms before scaling to {post_latency:.2f} ms after peak scale-out "
+            f"({improvement:.2f}%). This does not mean scaling caused worse latency; it more likely indicates continued load pressure, pod warm-up effects, downstream processing pressure, or insufficient time for recovery within this run window."
         )
+def calculate_cpu_relief(
+    component: str,
+    cpu_util_samples: list[tuple[int, float]],
+    replica_samples: list[tuple[int, float]],
+    min_replicas: Optional[float],
+    run_start: int,
+    run_end: int,
+) -> dict[str, Optional[float] | Optional[int] | str]:
+    """
+    Estimate whether CPU pressure reduced after HPA scale-out.
+
+    This is also correlation-based. It compares peak CPU pressure before first scale-out with average CPU pressure
+    after peak scale-out to see whether HPA helped distribute load across replicas.
+    """
+    scale_ts = first_scale_timestamp(replica_samples, min_replicas)
+    peak_ts = peak_replica_timestamp(replica_samples)
+
+    result: dict[str, Optional[float] | Optional[int] | str] = {
+        "component": component,
+        "first_scale_ts": scale_ts,
+        "peak_replica_ts": peak_ts,
+        "pre_cpu_peak": None,
+        "post_cpu_avg": None,
+        "cpu_relief_percent": None,
+        "confidence": "insufficient-data",
+        "message": f"{component}: insufficient data to evaluate CPU relief after scale-out.",
+    }
+
+    if scale_ts is None or peak_ts is None:
+        result["message"] = f"{component}: no scale-out event was observed, so CPU relief after scaling is not applicable."
+        return result
+
+    pre_window_start = max(run_start, scale_ts - 90)
+    pre_window_end = max(run_start, scale_ts - 10)
+    post_window_start = min(run_end, peak_ts + 20)
+    post_window_end = run_end
+
+    pre_cpu_samples = filter_samples(cpu_util_samples, pre_window_start, pre_window_end)
+    post_cpu_samples = filter_samples(cpu_util_samples, post_window_start, post_window_end)
+
+    pre_cpu_peak = max((value for _, value in pre_cpu_samples), default=None)
+    post_cpu_avg = average_values(post_cpu_samples)
+
+    result["pre_cpu_peak"] = pre_cpu_peak
+    result["post_cpu_avg"] = post_cpu_avg
+
+    if pre_cpu_peak is None or post_cpu_avg is None or pre_cpu_peak <= 0:
+        result["message"] = f"{component}: scale-out was observed, but there were not enough CPU samples before and after scaling to estimate CPU relief."
+        return result
+
+    relief = (pre_cpu_peak - post_cpu_avg) / pre_cpu_peak * 100
+    result["cpu_relief_percent"] = relief
+
+    if relief >= 25:
+        result["confidence"] = "strong-cpu-relief"
+        result["message"] = (
+            f"{component}: CPU pressure reduced after scale-out. Peak CPU utilization before scaling was "
+            f"{pre_cpu_peak:.2f}%, while average CPU utilization after peak scale-out settled at {post_cpu_avg:.2f}% "
+            f"({relief:.2f}% relief). This is a strong correlation signal that HPA distributed workload pressure across replicas."
+        )
+    elif relief >= 10:
+        result["confidence"] = "moderate-cpu-relief"
+        result["message"] = (
+            f"{component}: CPU pressure moderately reduced after scale-out. Peak CPU utilization before scaling was "
+            f"{pre_cpu_peak:.2f}%, and average CPU utilization after peak scale-out was {post_cpu_avg:.2f}% "
+            f"({relief:.2f}% relief)."
+        )
+    elif relief > -10:
+        result["confidence"] = "neutral"
+        result["message"] = (
+            f"{component}: CPU pressure remained broadly stable after scale-out. CPU moved from a pre-scale peak of "
+            f"{pre_cpu_peak:.2f}% to a post-scale average of {post_cpu_avg:.2f}% ({relief:.2f}%)."
+        )
+    else:
+        result["confidence"] = "continued-cpu-pressure"
+        result["message"] = (
+            f"{component}: CPU pressure remained high despite scale-out. CPU moved from a pre-scale peak of "
+            f"{pre_cpu_peak:.2f}% to a post-scale average of {post_cpu_avg:.2f}% ({relief:.2f}%). This suggests continued pressure or insufficient scale-out time."
+        )
+
+    return result
 
     return result
 
@@ -372,13 +454,15 @@ def build_scaling_interpretation(
     cu_max_latency: Optional[float],
     du_latency_recovery: Optional[dict[str, Optional[float] | Optional[int] | str]] = None,
     cu_latency_recovery: Optional[dict[str, Optional[float] | Optional[int] | str]] = None,
+    du_cpu_relief: Optional[dict[str, Optional[float] | Optional[int] | str]] = None,
+    cu_cpu_relief: Optional[dict[str, Optional[float] | Optional[int] | str]] = None,
 ) -> list[str]:
     """
     Build AIOps interpretation text.
 
     This function now distinguishes between:
     - proven HPA behavior from CPU and replica metrics, and
-    - correlation-based latency recovery after scale-out.
+    - correlation-based CPU relief and latency recovery after scale-out.
 
     We intentionally use the word correlation instead of causation because latency can also be affected
     by traffic mix, pod warm-up, downstream pressure, and scrape timing.
@@ -424,6 +508,12 @@ def build_scaling_interpretation(
             "CU max latency crossed 1000 ms. Treat this as a latency stress signal for CU-side processing, not automatic proof that HPA improved or worsened latency."
         )
 
+    if du_cpu_relief is not None:
+        lines.append(str(du_cpu_relief["message"]))
+
+    if cu_cpu_relief is not None:
+        lines.append(str(cu_cpu_relief["message"]))
+
     if du_latency_recovery is not None:
         lines.append(str(du_latency_recovery["message"]))
 
@@ -431,7 +521,7 @@ def build_scaling_interpretation(
         lines.append(str(cu_latency_recovery["message"]))
 
     lines.append(
-        "Latency recovery analysis is correlation-based: it compares latency before first scale-out with latency after peak scale-out. It is useful AIOps evidence, but it should be described as correlation rather than absolute causation."
+        "AIOps recovery analysis is correlation-based: it compares CPU and latency before first scale-out with CPU and latency after peak scale-out. It is useful operational evidence, but it should be described as correlation rather than absolute causation."
     )
 
     return lines
@@ -573,6 +663,8 @@ def build_report(args: argparse.Namespace) -> str:
 
     du_peak_cpu_util = q(f'max_over_time(({du_cpu_util_series})[{range_window}:])')
     cu_peak_cpu_util = q(f'max_over_time(({cu_cpu_util_series})[{range_window}:])')
+    du_cpu_util_samples_over_time = qr(du_cpu_util_series)
+    cu_cpu_util_samples_over_time = qr(cu_cpu_util_series)
 
     du_latency_samples_over_time = qr(f'avg(avg_end_to_end_latency_ms{{app="du",pipeline_run_id="{run_id}"}})')
     cu_latency_samples_over_time = qr(f'avg(avg_attach_latency_ms{{app="cu",pipeline_run_id="{run_id}"}})')
@@ -588,6 +680,22 @@ def build_report(args: argparse.Namespace) -> str:
     cu_latency_recovery = calculate_latency_recovery(
         "CU",
         cu_latency_samples_over_time,
+        cu_replica_samples,
+        cu_hpa_min_replicas,
+        start,
+        end,
+    )
+    du_cpu_relief = calculate_cpu_relief(
+        "DU",
+        du_cpu_util_samples_over_time,
+        du_replica_samples,
+        du_hpa_min_replicas,
+        start,
+        end,
+    )
+    cu_cpu_relief = calculate_cpu_relief(
+        "CU",
+        cu_cpu_util_samples_over_time,
         cu_replica_samples,
         cu_hpa_min_replicas,
         start,
@@ -631,6 +739,8 @@ def build_report(args: argparse.Namespace) -> str:
         cu_max_latency,
         du_latency_recovery,
         cu_latency_recovery,
+        du_cpu_relief,
+        cu_cpu_relief,
     )
 
     overall_pass = pass_rach and pass_attach and pass_scaling
@@ -665,6 +775,9 @@ def build_report(args: argparse.Namespace) -> str:
         f"DU latency pre-scale   : {fmt_number(du_latency_recovery['pre_latency'])} ms",
         f"DU latency post-scale  : {fmt_number(du_latency_recovery['post_latency'])} ms",
         f"DU latency improvement : {fmt_number(du_latency_recovery['improvement_percent'])}%",
+        f"DU CPU pre-scale peak   : {fmt_number(du_cpu_relief['pre_cpu_peak'])}%",
+        f"DU CPU post-scale avg   : {fmt_number(du_cpu_relief['post_cpu_avg'])}%",
+        f"DU CPU relief           : {fmt_number(du_cpu_relief['cpu_relief_percent'])}%",
         "",
         "CU / Attach Summary",
         "-" * 72,
@@ -681,6 +794,9 @@ def build_report(args: argparse.Namespace) -> str:
         f"CU latency pre-scale   : {fmt_number(cu_latency_recovery['pre_latency'])} ms",
         f"CU latency post-scale  : {fmt_number(cu_latency_recovery['post_latency'])} ms",
         f"CU latency improvement : {fmt_number(cu_latency_recovery['improvement_percent'])}%",
+        f"CU CPU pre-scale peak   : {fmt_number(cu_cpu_relief['pre_cpu_peak'])}%",
+        f"CU CPU post-scale avg   : {fmt_number(cu_cpu_relief['post_cpu_avg'])}%",
+        f"CU CPU relief           : {fmt_number(cu_cpu_relief['cpu_relief_percent'])}%",
         "",
         "AIOps Assessment",
         "-" * 72,

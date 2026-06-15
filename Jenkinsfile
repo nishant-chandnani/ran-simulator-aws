@@ -135,8 +135,9 @@ pipeline {
                 sh '''
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
-                echo "Adding Prometheus Community Helm repository..."
+                echo "Adding observability Helm repositories..."
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+                helm repo add grafana https://grafana.github.io/helm-charts || true
                 helm repo update
 
                 if [ ! -f observability/kube-prometheus-stack-values.yaml ]; then
@@ -149,11 +150,25 @@ pipeline {
                   --create-namespace \
                   -f observability/kube-prometheus-stack-values.yaml
 
+                if [ ! -f observability/grafana-image-renderer-values.yaml ]; then
+                  echo "Missing observability/grafana-image-renderer-values.yaml"
+                  exit 1
+                fi
+
+                echo "Installing/Updating Grafana Image Renderer..."
+                helm upgrade --install grafana-image-renderer grafana/grafana-image-renderer \
+                  --namespace monitoring \
+                  --create-namespace \
+                  -f observability/grafana-image-renderer-values.yaml
+
                 echo "Waiting for Prometheus Operator rollout..."
                 kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
 
                 echo "Waiting for Grafana rollout..."
                 kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
+
+                echo "Waiting for Grafana Image Renderer rollout..."
+                kubectl rollout status deployment/grafana-image-renderer -n monitoring --timeout=300s
 
                 echo "Waiting for Prometheus StatefulSet rollout..."
                 kubectl rollout status statefulset/prometheus-kube-prometheus-stack-prometheus -n monitoring --timeout=300s
@@ -612,8 +627,6 @@ LOADTEST
                   --output "reports/aiops_report_${BUILD_NUMBER}.txt"
 
                 echo "AIOps report generated successfully: reports/aiops_report_${BUILD_NUMBER}.txt"
-                echo "Printing AIOps report in Jenkins console:"
-                cat "reports/aiops_report_${BUILD_NUMBER}.txt"
 
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
                   echo "❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
