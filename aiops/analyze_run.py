@@ -271,6 +271,10 @@ def calculate_latency_recovery(
             f"{pre_latency:.2f} ms before scaling to {post_latency:.2f} ms after peak scale-out "
             f"({improvement:.2f}%). This does not mean scaling caused worse latency; it more likely indicates continued load pressure, pod warm-up effects, downstream processing pressure, or insufficient time for recovery within this run window."
         )
+
+    return result
+
+
 def calculate_cpu_relief(
     component: str,
     cpu_util_samples: list[tuple[int, float]],
@@ -350,8 +354,6 @@ def calculate_cpu_relief(
             f"{component}: CPU pressure remained high despite scale-out. CPU moved from a pre-scale peak of "
             f"{pre_cpu_peak:.2f}% to a post-scale average of {post_cpu_avg:.2f}% ({relief:.2f}%). This suggests continued pressure or insufficient scale-out time."
         )
-
-    return result
 
     return result
 

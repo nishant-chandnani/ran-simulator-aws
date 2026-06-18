@@ -634,11 +634,78 @@ LOADTEST
                 '''
             }
         }
+        stage('Capture Grafana Snapshots') {
+            steps {
+                sh '''
+                export KUBECONFIG="$KUBECONFIG_PATH"
+
+                echo "Capturing Grafana dashboard snapshot using an ephemeral in-cluster curl pod..."
+                echo "This avoids exposing Grafana publicly or using kubectl port-forward from Jenkins."
+
+                mkdir -p reports
+
+                GRAFANA_RENDER_POD="grafana-snapshot-client"
+                GRAFANA_URL="http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local"
+                SNAPSHOT_FILE="reports/grafana_dashboard_${BUILD_NUMBER}.png"
+
+                kubectl delete pod "$GRAFANA_RENDER_POD" --ignore-not-found=true > /dev/null 2>&1 || true
+
+                cleanup() {
+                  kubectl delete pod "$GRAFANA_RENDER_POD" --ignore-not-found=true > /dev/null 2>&1 || true
+                }
+                trap cleanup EXIT
+
+                echo "Creating temporary Grafana snapshot client pod..."
+                kubectl run "$GRAFANA_RENDER_POD" \
+                  --restart=Never \
+                  --image=curlimages/curl:8.10.1 \
+                  --command -- sleep 3600
+
+                echo "Waiting for Grafana snapshot client pod to become ready..."
+                kubectl wait --for=condition=Ready pod/"$GRAFANA_RENDER_POD" --timeout=120s
+
+                echo "Validating Grafana API health from inside the cluster..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl --fail-with-body -s -u admin:admin ${GRAFANA_URL}/api/health"
+
+                echo "Discovering provisioned Grafana dashboard UID..."
+                DASHBOARD_UID=$(kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl --fail-with-body -s -u admin:admin '${GRAFANA_URL}/api/search?query=RAN' | sed -n 's/.*\"uid\":\"\\([^\"]*\\)\".*/\\1/p' | head -1" | tr -d '\r')
+
+                if [ -z "$DASHBOARD_UID" ]; then
+                  echo "Unable to discover Grafana dashboard UID. Available dashboards:"
+                  kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl -s -u admin:admin '${GRAFANA_URL}/api/search'"
+                  exit 1
+                fi
+
+                echo "Using Grafana dashboard UID: $DASHBOARD_UID"
+
+                START_EPOCH=$(cat reports/aiops_run_start_epoch.txt)
+                END_EPOCH=$(cat reports/aiops_run_end_epoch.txt)
+                FROM_MS=$((START_EPOCH * 1000))
+                TO_MS=$((END_EPOCH * 1000))
+
+                RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1200&tz=browser"
+
+                echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png '$RENDER_URL'"
+
+                echo "Copying rendered dashboard snapshot back to Jenkins reports directory..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "cat /tmp/grafana-dashboard.png" > "$SNAPSHOT_FILE"
+
+                if [ ! -s "$SNAPSHOT_FILE" ]; then
+                  echo "Grafana snapshot file was not created or is empty: $SNAPSHOT_FILE"
+                  exit 1
+                fi
+
+                echo "Grafana dashboard snapshot generated successfully: $SNAPSHOT_FILE"
+                ls -lh "$SNAPSHOT_FILE"
+                '''
+            }
+        }
     }
 
     post {
         always {
-            archiveArtifacts artifacts: 'reports/*.txt', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'reports/*', allowEmptyArchive: true
         }
     }
 }
