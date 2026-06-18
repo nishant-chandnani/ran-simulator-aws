@@ -636,17 +636,6 @@ LOADTEST
             }
         }
         stage('Capture Grafana Snapshots') {
-        stage('Finalize Pipeline Result') {
-            steps {
-                script {
-                    def result = readFile('reports/kpi_result.txt').trim()
-                    if (result == 'FAILED') {
-                        error('KPI validation failed. Build marked as FAILURE after evidence collection.')
-                    }
-                    echo 'KPI validation passed. Build marked SUCCESS.'
-                }
-            }
-        }
             steps {
                 sh '''
                 export KUBECONFIG="$KUBECONFIG_PATH"
@@ -713,6 +702,18 @@ LOADTEST
                 echo "Grafana dashboard snapshot generated successfully: $SNAPSHOT_FILE"
                 ls -lh "$SNAPSHOT_FILE"
                 '''
+            }
+        }
+
+        stage('Finalize Pipeline Result') {
+            steps {
+                script {
+                    def result = readFile('reports/kpi_result.txt').trim()
+                    if (result == 'FAILED') {
+                        error('KPI validation failed. Build marked as FAILURE after evidence collection.')
+                    }
+                    echo 'KPI validation passed. Build marked SUCCESS.'
+                }
             }
         }
     }
