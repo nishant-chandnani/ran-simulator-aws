@@ -25,6 +25,11 @@ grafana:
       enabled: true
       label: grafana_dashboard
       searchNamespace: monitoring
+      env:
+        HEALTH_PORT: "8081"
+    datasources:
+      env:
+        HEALTH_PORT: "8082"
 
 kube-state-metrics:
   metricLabelsAllowlist:
