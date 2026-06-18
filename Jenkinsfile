@@ -665,14 +665,15 @@ LOADTEST
                 kubectl wait --for=condition=Ready pod/"$GRAFANA_RENDER_POD" --timeout=120s
 
                 echo "Validating Grafana API health from inside the cluster..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl --fail-with-body -s -u admin:admin ${GRAFANA_URL}/api/health"
+                kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin "${GRAFANA_URL}/api/health"
 
                 echo "Discovering provisioned Grafana dashboard UID..."
-                DASHBOARD_UID=$(kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl --fail-with-body -s -u admin:admin '${GRAFANA_URL}/api/search?query=RAN' | sed -n 's/.*\"uid\":\"\\([^\"]*\\)\".*/\\1/p' | head -1" | tr -d '\r')
+                DASHBOARD_SEARCH_JSON=$(kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin "${GRAFANA_URL}/api/search?query=RAN")
+                DASHBOARD_UID=$(printf '%s' "$DASHBOARD_SEARCH_JSON" | sed -n 's/.*"uid":"\([^"]*\)".*/\1/p' | head -1 | tr -d '\r')
 
                 if [ -z "$DASHBOARD_UID" ]; then
                   echo "Unable to discover Grafana dashboard UID. Available dashboards:"
-                  kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl -s -u admin:admin '${GRAFANA_URL}/api/search'"
+                  kubectl exec "$GRAFANA_RENDER_POD" -- curl -s -u admin:admin "${GRAFANA_URL}/api/search"
                   exit 1
                 fi
 
@@ -686,10 +687,10 @@ LOADTEST
                 RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1200&tz=browser"
 
                 echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png '$RENDER_URL'"
+                kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png "$RENDER_URL"
 
                 echo "Copying rendered dashboard snapshot back to Jenkins reports directory..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- sh -c "cat /tmp/grafana-dashboard.png" > "$SNAPSHOT_FILE"
+                kubectl exec "$GRAFANA_RENDER_POD" -- cat /tmp/grafana-dashboard.png > "$SNAPSHOT_FILE"
 
                 if [ ! -s "$SNAPSHOT_FILE" ]; then
                   echo "Grafana snapshot file was not created or is empty: $SNAPSHOT_FILE"
