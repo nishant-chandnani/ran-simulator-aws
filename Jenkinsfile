@@ -669,11 +669,12 @@ LOADTEST
 
                 echo "Discovering provisioned Grafana dashboard UID..."
                 DASHBOARD_SEARCH_JSON=$(kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin "${GRAFANA_URL}/api/search?query=RAN")
-                DASHBOARD_UID=$(printf '%s' "$DASHBOARD_SEARCH_JSON" | sed -n 's/.*"uid":"\([^"]*\)".*/\1/p' | head -1 | tr -d '\r')
+                DASHBOARD_UID=$(printf '%s' "$DASHBOARD_SEARCH_JSON" | jq -r 'map(select(.title == "RAN Performance Dashboard")) | .[0].uid // empty')
 
                 if [ -z "$DASHBOARD_UID" ]; then
-                  echo "Unable to discover Grafana dashboard UID. Available dashboards:"
-                  kubectl exec "$GRAFANA_RENDER_POD" -- curl -s -u admin:admin "${GRAFANA_URL}/api/search"
+                  echo "Unable to discover Grafana dashboard UID for title: RAN Performance Dashboard"
+                  echo "Available dashboards returned by Grafana search API:"
+                  printf '%s\n' "$DASHBOARD_SEARCH_JSON"
                   exit 1
                 fi
 
