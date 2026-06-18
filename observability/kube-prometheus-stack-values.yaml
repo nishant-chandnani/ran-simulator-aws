@@ -16,8 +16,6 @@ grafana:
     rendering:
       server_url: http://grafana-image-renderer.monitoring.svc.cluster.local:8081/render
       callback_url: http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local
-    feature_toggles:
-      enable: publicDashboards
 
   service:
     type: ClusterIP
