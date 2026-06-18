@@ -121,7 +121,7 @@ resource "aws_instance" "jenkins_server" {
   instance_type = "c7i-flex.large"
 
   root_block_device {
-    volume_size = 20
+    volume_size = 30
     volume_type = "gp3"
   }
 
