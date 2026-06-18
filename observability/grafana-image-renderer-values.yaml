@@ -33,6 +33,8 @@ spec:
               value: "true"
             - name: RENDERING_ARGS
               value: "--no-sandbox,--disable-gpu"
+            - name: AUTH_TOKEN
+              value: "ran-simulator-renderer-token"
           resources:
             requests:
               cpu: 100m
