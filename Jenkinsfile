@@ -156,10 +156,7 @@ pipeline {
                 fi
 
                 echo "Installing/Updating Grafana Image Renderer..."
-                helm upgrade --install grafana-image-renderer grafana/grafana-image-renderer \
-                  --namespace monitoring \
-                  --create-namespace \
-                  -f observability/grafana-image-renderer-values.yaml
+                kubectl apply -f observability/grafana-image-renderer-values.yaml
 
                 echo "Waiting for Prometheus Operator rollout..."
                 kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
