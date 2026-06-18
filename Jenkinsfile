@@ -626,15 +626,27 @@ LOADTEST
                 echo "AIOps report generated successfully: reports/aiops_report_${BUILD_NUMBER}.txt"
 
                 if (( RACH_CHECK )) || (( ATTACH_CHECK )); then
+                  echo "FAILED" > reports/kpi_result.txt
                   echo "❌ KPI validation FAILED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
-                  exit 1
+                else
+                  echo "PASSED" > reports/kpi_result.txt
+                  echo "✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
                 fi
-
-                echo "✅ KPI validation PASSED (RACH threshold: $RACH_THRESHOLD%, ATTACH threshold: $ATTACH_THRESHOLD%)"
                 '''
             }
         }
         stage('Capture Grafana Snapshots') {
+        stage('Finalize Pipeline Result') {
+            steps {
+                script {
+                    def result = readFile('reports/kpi_result.txt').trim()
+                    if (result == 'FAILED') {
+                        error('KPI validation failed. Build marked as FAILURE after evidence collection.')
+                    }
+                    echo 'KPI validation passed. Build marked SUCCESS.'
+                }
+            }
+        }
             steps {
                 sh '''
                 export KUBECONFIG="$KUBECONFIG_PATH"
