@@ -688,7 +688,7 @@ LOADTEST
                 TO_MS=$((END_EPOCH * 1000))
 
                 KPI_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1200&tz=browser"
-                SCALING_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=2600&tz=browser"
+                SCALING_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=3400&tz=browser"
 
                 echo "Rendering Grafana KPI summary snapshot for build ${BUILD_NUMBER}..."
                 kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-kpi-summary.png "$KPI_RENDER_URL"
