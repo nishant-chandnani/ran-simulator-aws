@@ -692,7 +692,7 @@ LOADTEST
                 FROM_MS=$((START_EPOCH * 1000))
                 TO_MS=$((END_EPOCH * 1000))
 
-                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=2850&tz=browser"
+                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=2500&tz=browser"
 
                 echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
                 kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png "$DASHBOARD_RENDER_URL"

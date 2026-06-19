@@ -131,6 +131,20 @@ def fmt_int(value: Optional[float]) -> str:
         return "N/A"
     return str(int(round(value)))
 
+def fmt_latency_delta(improvement_percent: Optional[float]) -> str:
+    """Format latency change in operational language.
+
+    The internal calculation uses improvement_percent = (pre - post) / pre * 100.
+    Positive means latency reduced; negative means latency increased.
+    """
+    if improvement_percent is None:
+        return "N/A"
+    if improvement_percent > 0:
+        return f"{improvement_percent:.2f}% lower"
+    if improvement_percent < 0:
+        return f"{abs(improvement_percent):.2f}% higher"
+    return "0.00% change"
+
 
 def value_or_default(value: Optional[float], default: float) -> float:
     """Use a live Prometheus value when available, otherwise fall back to a safe default."""
@@ -247,29 +261,29 @@ def calculate_latency_recovery(
     if improvement >= 15:
         result["confidence"] = "strong-correlation"
         result["message"] = (
-            f"{component}: latency recovery observed after scale-out. Average latency improved from "
+            f"{component}: latency recovery observed after scale-out. Average latency moved from "
             f"{pre_latency:.2f} ms before scaling to {post_latency:.2f} ms after peak scale-out "
-            f"({improvement:.2f}% improvement). This is a strong correlation signal, not absolute proof of causation."
+            f"({fmt_latency_delta(improvement)}). This is a strong correlation signal, not absolute proof of causation."
         )
     elif improvement >= 5:
         result["confidence"] = "moderate-correlation"
         result["message"] = (
-            f"{component}: modest latency recovery observed after scale-out. Average latency improved from "
-            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}% improvement). "
+            f"{component}: modest latency recovery observed after scale-out. Average latency moved from "
+            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({fmt_latency_delta(improvement)}). "
             f"This suggests scale-out helped, but confidence is moderate."
         )
     elif improvement > -5:
         result["confidence"] = "neutral"
         result["message"] = (
-            f"{component}: latency remained broadly stable after scale-out. Average latency changed from "
-            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({improvement:.2f}%)."
+            f"{component}: latency remained broadly stable after scale-out. Average latency moved from "
+            f"{pre_latency:.2f} ms to {post_latency:.2f} ms ({fmt_latency_delta(improvement)})."
         )
     else:
         result["confidence"] = "latency-remained-elevated"
         result["message"] = (
-            f"{component}: scaling coincided with continued latency elevation. Average latency changed from "
+            f"{component}: scaling coincided with continued latency elevation. Average latency moved from "
             f"{pre_latency:.2f} ms before scaling to {post_latency:.2f} ms after peak scale-out "
-            f"({improvement:.2f}%). This is more likely explained by sustained workload pressure, pod warm-up effects, downstream processing bottlenecks, or insufficient recovery time within the observation window rather than scaling itself causing higher latency."
+            f"({fmt_latency_delta(improvement)}). This is more likely explained by sustained workload pressure, pod warm-up effects, downstream processing bottlenecks, or insufficient recovery time within the observation window rather than scaling itself causing higher latency."
         )
 
     return result
@@ -753,7 +767,15 @@ def build_report(args: argparse.Namespace) -> str:
         "=" * 72,
         f"Analysis window: {start} → {end} epoch seconds ({duration_seconds}s)",
         "",
-        "Scaling Configuration",
+        "Run Status",
+        "-" * 72,
+        f"Overall verdict        : {'PASS' if overall_pass else 'FAIL'}",
+        f"RACH KPI               : {'PASS' if pass_rach else 'FAIL'} ({fmt_number(du_sr)}% >= {RACH_SR_THRESHOLD}%)",
+        f"Attach KPI             : {'PASS' if pass_attach else 'FAIL'} ({fmt_number(cu_sr)}% >= {ATTACH_SR_THRESHOLD}%)",
+        f"HPA behavior           : {'PASS' if pass_scaling else 'FAIL'}",
+        f"Scaling pattern        : {scaling_pattern}",
+        "",
+        "Observed HPA Configuration",
         "-" * 72,
         f"DU HPA target CPU      : {fmt_number(value_or_default(du_hpa_target_cpu, DEFAULT_HPA_TARGET_CPU_PERCENT))}%",
         f"DU HPA min replicas    : {fmt_int(value_or_default(du_hpa_min_replicas, DEFAULT_HPA_MIN_REPLICAS))}",
@@ -762,7 +784,7 @@ def build_report(args: argparse.Namespace) -> str:
         f"CU HPA min replicas    : {fmt_int(value_or_default(cu_hpa_min_replicas, DEFAULT_HPA_MIN_REPLICAS))}",
         f"CU HPA max replicas    : {fmt_int(value_or_default(cu_hpa_max_replicas, DEFAULT_HPA_MAX_REPLICAS))}",
         "",
-        "DU / RACH Summary",
+        "DU Performance Summary",
         "-" * 72,
         f"Observed RACH attempts : {fmt_int(du_total)}",
         f"Successful RACH        : {fmt_int(du_success)}",
@@ -776,12 +798,12 @@ def build_report(args: argparse.Namespace) -> str:
         f"Max DU replicas        : {fmt_int(du_max_replicas)}",
         f"DU latency pre-scale   : {fmt_number(du_latency_recovery['pre_latency'])} ms",
         f"DU latency post-scale  : {fmt_number(du_latency_recovery['post_latency'])} ms",
-        f"DU latency change after scaling : {fmt_number(du_latency_recovery['improvement_percent'])}%",
+        f"DU latency change after scale-out : {fmt_latency_delta(du_latency_recovery['improvement_percent'])}",
         f"DU CPU pre-scale peak   : {fmt_number(du_cpu_relief['pre_cpu_peak'])}%",
         f"DU CPU post-scale avg   : {fmt_number(du_cpu_relief['post_cpu_avg'])}%",
-        f"DU CPU relief           : {fmt_number(du_cpu_relief['cpu_relief_percent'])}%",
+        f"DU CPU relief after scale-out : {fmt_number(du_cpu_relief['cpu_relief_percent'])}%",
         "",
-        "CU / Attach Summary",
+        "CU Performance Summary",
         "-" * 72,
         f"Observed CU requests   : {fmt_int(cu_total)}",
         f"Successful attach      : {fmt_int(cu_success)}",
@@ -795,10 +817,10 @@ def build_report(args: argparse.Namespace) -> str:
         f"Max CU replicas        : {fmt_int(cu_max_replicas)}",
         f"CU latency pre-scale   : {fmt_number(cu_latency_recovery['pre_latency'])} ms",
         f"CU latency post-scale  : {fmt_number(cu_latency_recovery['post_latency'])} ms",
-        f"CU latency change after scaling : {fmt_number(cu_latency_recovery['improvement_percent'])}%",
+        f"CU latency change after scale-out : {fmt_latency_delta(cu_latency_recovery['improvement_percent'])}",
         f"CU CPU pre-scale peak   : {fmt_number(cu_cpu_relief['pre_cpu_peak'])}%",
         f"CU CPU post-scale avg   : {fmt_number(cu_cpu_relief['post_cpu_avg'])}%",
-        f"CU CPU relief           : {fmt_number(cu_cpu_relief['cpu_relief_percent'])}%",
+        f"CU CPU relief after scale-out : {fmt_number(cu_cpu_relief['cpu_relief_percent'])}%",
         "",
         "AIOps Assessment",
         "-" * 72,
@@ -811,7 +833,7 @@ def build_report(args: argparse.Namespace) -> str:
         "",
         f"Overall verdict        : {'PASS' if overall_pass else 'FAIL'}",
         "",
-        "Interpretation",
+        "Executive Interpretation",
         "-" * 72,
     ]
 
@@ -833,6 +855,11 @@ def build_report(args: argparse.Namespace) -> str:
     report_lines.append("Scaling Interpretation")
     report_lines.append("-" * 72)
     report_lines.extend(scaling_interpretation)
+    report_lines.append("=" * 72)
+    report_lines.append("End of AIOps Analysis")
+    report_lines.append("")
+    report_lines.append("This report was generated automatically from Prometheus historical metrics")
+    report_lines.append("covering the Jenkins execution window for this pipeline run.")
     report_lines.append("=" * 72)
 
     return "\n".join(report_lines)
