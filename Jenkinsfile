@@ -373,6 +373,7 @@ pipeline {
             steps {
                 sh '''
                 mkdir -p reports
+                rm -f reports/aiops_run_start_epoch.txt reports/aiops_run_end_epoch.txt
                 date +%s > reports/aiops_run_start_epoch.txt
                 echo "AIOps run start epoch: $(cat reports/aiops_run_start_epoch.txt)"
                 '''
@@ -613,6 +614,12 @@ LOADTEST
 
                 echo "AIOps analysis window captured:"
                 echo "RUN_ID=$BUILD_NUMBER"
+                if [ ! -f reports/aiops_run_start_epoch.txt ]; then
+                  echo "Missing reports/aiops_run_start_epoch.txt"
+                  ls -lah reports || true
+                  exit 1
+                fi
+
                 echo "START_EPOCH=$(cat reports/aiops_run_start_epoch.txt)"
                 echo "END_EPOCH=$(cat reports/aiops_run_end_epoch.txt)"
 
