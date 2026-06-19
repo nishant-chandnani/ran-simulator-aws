@@ -696,7 +696,7 @@ LOADTEST
                 # Main dashboard snapshot (full dashboard)
                 DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1700&tz=browser"
                 # Summary/replica-aware container panel (panelId=48, adjust if needed)
-                SUMMARY_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=900&tz=browser&viewPanel=48"
+                SUMMARY_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1000&tz=browser&viewPanel=48"
 
                 echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
                 kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png "$DASHBOARD_RENDER_URL"
