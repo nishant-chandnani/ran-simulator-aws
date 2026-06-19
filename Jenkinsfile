@@ -654,8 +654,7 @@ LOADTEST
 
                 GRAFANA_RENDER_POD="grafana-snapshot-client"
                 GRAFANA_URL="http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local"
-                KPI_SNAPSHOT_FILE="reports/grafana_kpi_summary_${BUILD_NUMBER}.png"
-                SCALING_SNAPSHOT_FILE="reports/grafana_scaling_behaviour_${BUILD_NUMBER}.png"
+                DASHBOARD_SNAPSHOT_FILE="reports/grafana_dashboard_${BUILD_NUMBER}.png"
 
                 kubectl delete pod "$GRAFANA_RENDER_POD" --ignore-not-found=true > /dev/null 2>&1 || true
 
@@ -694,33 +693,21 @@ LOADTEST
                 FROM_MS=$((START_EPOCH * 1000))
                 TO_MS=$((END_EPOCH * 1000))
 
-                KPI_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1200&tz=browser"
-                SCALING_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=3400&tz=browser"
+                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=3050&tz=browser"
 
-                echo "Rendering Grafana KPI summary snapshot for build ${BUILD_NUMBER}..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-kpi-summary.png "$KPI_RENDER_URL"
+                echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png "$DASHBOARD_RENDER_URL"
 
-                echo "Copying KPI summary snapshot back to Jenkins reports directory..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- cat /tmp/grafana-kpi-summary.png > "$KPI_SNAPSHOT_FILE"
+                echo "Copying Grafana dashboard snapshot back to Jenkins reports directory..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- cat /tmp/grafana-dashboard.png > "$DASHBOARD_SNAPSHOT_FILE"
 
-                if [ ! -s "$KPI_SNAPSHOT_FILE" ]; then
-                  echo "Grafana KPI summary snapshot file was not created or is empty: $KPI_SNAPSHOT_FILE"
+                if [ ! -s "$DASHBOARD_SNAPSHOT_FILE" ]; then
+                  echo "Grafana dashboard snapshot file was not created or is empty: $DASHBOARD_SNAPSHOT_FILE"
                   exit 1
                 fi
 
-                echo "Rendering Grafana scaling behaviour snapshot for build ${BUILD_NUMBER}..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-scaling-behaviour.png "$SCALING_RENDER_URL"
-
-                echo "Copying scaling behaviour snapshot back to Jenkins reports directory..."
-                kubectl exec "$GRAFANA_RENDER_POD" -- cat /tmp/grafana-scaling-behaviour.png > "$SCALING_SNAPSHOT_FILE"
-
-                if [ ! -s "$SCALING_SNAPSHOT_FILE" ]; then
-                  echo "Grafana scaling behaviour snapshot file was not created or is empty: $SCALING_SNAPSHOT_FILE"
-                  exit 1
-                fi
-
-                echo "Grafana snapshots generated successfully:"
-                ls -lh "$KPI_SNAPSHOT_FILE" "$SCALING_SNAPSHOT_FILE"
+                echo "Grafana dashboard snapshot generated successfully:"
+                ls -lh "$DASHBOARD_SNAPSHOT_FILE"
                 '''
             }
         }

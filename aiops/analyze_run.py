@@ -267,9 +267,9 @@ def calculate_latency_recovery(
     else:
         result["confidence"] = "latency-remained-elevated"
         result["message"] = (
-            f"{component}: latency remained elevated despite scale-out. Average latency moved from "
+            f"{component}: scaling coincided with continued latency elevation. Average latency changed from "
             f"{pre_latency:.2f} ms before scaling to {post_latency:.2f} ms after peak scale-out "
-            f"({improvement:.2f}%). This does not mean scaling caused worse latency; it more likely indicates continued load pressure, pod warm-up effects, downstream processing pressure, or insufficient time for recovery within this run window."
+            f"({improvement:.2f}%). This is more likely explained by sustained workload pressure, pod warm-up effects, downstream processing bottlenecks, or insufficient recovery time within the observation window rather than scaling itself causing higher latency."
         )
 
     return result
@@ -776,7 +776,7 @@ def build_report(args: argparse.Namespace) -> str:
         f"Max DU replicas        : {fmt_int(du_max_replicas)}",
         f"DU latency pre-scale   : {fmt_number(du_latency_recovery['pre_latency'])} ms",
         f"DU latency post-scale  : {fmt_number(du_latency_recovery['post_latency'])} ms",
-        f"DU latency improvement : {fmt_number(du_latency_recovery['improvement_percent'])}%",
+        f"DU latency change after scaling : {fmt_number(du_latency_recovery['improvement_percent'])}%",
         f"DU CPU pre-scale peak   : {fmt_number(du_cpu_relief['pre_cpu_peak'])}%",
         f"DU CPU post-scale avg   : {fmt_number(du_cpu_relief['post_cpu_avg'])}%",
         f"DU CPU relief           : {fmt_number(du_cpu_relief['cpu_relief_percent'])}%",
@@ -795,7 +795,7 @@ def build_report(args: argparse.Namespace) -> str:
         f"Max CU replicas        : {fmt_int(cu_max_replicas)}",
         f"CU latency pre-scale   : {fmt_number(cu_latency_recovery['pre_latency'])} ms",
         f"CU latency post-scale  : {fmt_number(cu_latency_recovery['post_latency'])} ms",
-        f"CU latency improvement : {fmt_number(cu_latency_recovery['improvement_percent'])}%",
+        f"CU latency change after scaling : {fmt_number(cu_latency_recovery['improvement_percent'])}%",
         f"CU CPU pre-scale peak   : {fmt_number(cu_cpu_relief['pre_cpu_peak'])}%",
         f"CU CPU post-scale avg   : {fmt_number(cu_cpu_relief['post_cpu_avg'])}%",
         f"CU CPU relief           : {fmt_number(cu_cpu_relief['cpu_relief_percent'])}%",
