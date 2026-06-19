@@ -646,7 +646,7 @@ LOADTEST
                 sh '''
                 export KUBECONFIG="$KUBECONFIG_PATH"
 
-                echo "Capturing Grafana dashboard snapshot using an ephemeral in-cluster curl pod..."
+                echo "Capturing Grafana dashboard and summary snapshots using an ephemeral in-cluster curl pod..."
                 echo "This avoids exposing Grafana publicly or using kubectl port-forward from Jenkins."
 
                 mkdir -p reports
@@ -654,6 +654,7 @@ LOADTEST
                 GRAFANA_RENDER_POD="grafana-snapshot-client"
                 GRAFANA_URL="http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local"
                 DASHBOARD_SNAPSHOT_FILE="reports/grafana_dashboard_${BUILD_NUMBER}.png"
+                SECOND_SNAPSHOT_FILE="reports/grafana_replica_summary_${BUILD_NUMBER}.png"
 
                 kubectl delete pod "$GRAFANA_RENDER_POD" --ignore-not-found=true > /dev/null 2>&1 || true
 
@@ -692,21 +693,34 @@ LOADTEST
                 FROM_MS=$((START_EPOCH * 1000))
                 TO_MS=$((END_EPOCH * 1000))
 
-                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=2500&tz=browser"
+                # Main dashboard snapshot (full dashboard)
+                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=1700&tz=browser"
+                # Summary/replica-aware container panel (panelId=48, adjust if needed)
+                SUMMARY_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=900&tz=browser&viewPanel=48"
 
                 echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
                 kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png "$DASHBOARD_RENDER_URL"
 
+                echo "Rendering Grafana summary/replica panel snapshot for build ${BUILD_NUMBER}..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-summary.png "$SUMMARY_RENDER_URL"
+
                 echo "Copying Grafana dashboard snapshot back to Jenkins reports directory..."
                 kubectl exec "$GRAFANA_RENDER_POD" -- cat /tmp/grafana-dashboard.png > "$DASHBOARD_SNAPSHOT_FILE"
+
+                echo "Copying Grafana summary/replica snapshot back to Jenkins reports directory..."
+                kubectl exec "$GRAFANA_RENDER_POD" -- cat /tmp/grafana-summary.png > "$SECOND_SNAPSHOT_FILE"
 
                 if [ ! -s "$DASHBOARD_SNAPSHOT_FILE" ]; then
                   echo "Grafana dashboard snapshot file was not created or is empty: $DASHBOARD_SNAPSHOT_FILE"
                   exit 1
                 fi
+                if [ ! -s "$SECOND_SNAPSHOT_FILE" ]; then
+                  echo "Grafana summary/replica snapshot file was not created or is empty: $SECOND_SNAPSHOT_FILE"
+                  exit 1
+                fi
 
-                echo "Grafana dashboard snapshot generated successfully:"
-                ls -lh "$DASHBOARD_SNAPSHOT_FILE"
+                echo "Grafana dashboard and summary snapshots generated successfully:"
+                ls -lh "$DASHBOARD_SNAPSHOT_FILE" "$SECOND_SNAPSHOT_FILE"
                 '''
             }
         }
