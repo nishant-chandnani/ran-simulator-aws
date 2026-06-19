@@ -372,8 +372,8 @@ pipeline {
         stage('Capture AIOps Run Start') {
             steps {
                 sh '''
+                rm -rf reports
                 mkdir -p reports
-                rm -f reports/aiops_run_start_epoch.txt reports/aiops_run_end_epoch.txt
                 date +%s > reports/aiops_run_start_epoch.txt
                 echo "AIOps run start epoch: $(cat reports/aiops_run_start_epoch.txt)"
                 '''
@@ -474,8 +474,7 @@ run_load_phase() {
     TOTAL_REQUESTS=$((TOTAL_REQUESTS + PHASE_REQUESTS))
 
     if [ "$ROUND_FAILURES" -gt 0 ]; then
-      printf '%s\n' "$PHASE_NAME round $round had $ROUND_FAILURES failed curl executions. Showing first few failures:"
-      cat /tmp/curl-${GLOBAL_ROUND}-*.out 2>/dev/null | head -20 || true
+      printf '%s\n' "$PHASE_NAME round $round had $ROUND_FAILURES failed curl executions. Failure details suppressed to keep Jenkins logs concise. Refer to the AIOps report for analysis."
     fi
 
     rm -f /tmp/curl-${GLOBAL_ROUND}-*.out /tmp/curl-${GLOBAL_ROUND}-*.status
@@ -693,7 +692,7 @@ LOADTEST
                 FROM_MS=$((START_EPOCH * 1000))
                 TO_MS=$((END_EPOCH * 1000))
 
-                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=3050&tz=browser"
+                DASHBOARD_RENDER_URL="${GRAFANA_URL}/render/d/${DASHBOARD_UID}/ran-performance-dashboard?orgId=1&from=${FROM_MS}&to=${TO_MS}&var-run_id=${BUILD_NUMBER}&width=1600&height=2850&tz=browser"
 
                 echo "Rendering Grafana dashboard snapshot for build ${BUILD_NUMBER}..."
                 kubectl exec "$GRAFANA_RENDER_POD" -- curl --fail-with-body -s -u admin:admin --max-time 180 -o /tmp/grafana-dashboard.png "$DASHBOARD_RENDER_URL"
@@ -727,7 +726,8 @@ LOADTEST
 
     post {
         always {
-            archiveArtifacts artifacts: 'reports/*', allowEmptyArchive: true
+            archiveArtifacts artifacts: "reports/*${env.BUILD_NUMBER}*", allowEmptyArchive: true
+            archiveArtifacts artifacts: 'reports/aiops_run_start_epoch.txt,reports/aiops_run_end_epoch.txt', allowEmptyArchive: true
         }
     }
 }
